@@ -60,17 +60,21 @@ export default function HomeScreen() {
         {/* Hero Banner */}
         <View style={styles.heroContainer}>
           <LinearGradient
-            colors={['#E8F5E9', '#C8E6C9']}
+            colors={['rgba(4, 54, 15, 1)', 'rgba(5, 74, 19, 1)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.heroBanner}
           >
             <View style={styles.heroContent}>
-              <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeText}>🥗 FRESH & HEALTHY</Text>
+              <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+                <Text style={[styles.heroBadgeText, { color: '#fff' }]}>🥗 FRESH & HEALTHY</Text>
               </View>
-              <Text style={styles.heroTitle}>Nourish Your{'\n'}Body Today</Text>
-              <Text style={styles.heroSubtitle}>Meals crafted by nutritionists</Text>
+              <Text style={[styles.heroTitle, { color: '#fff' }]}>Healthy Eating,{'\n'}Made Effortless.</Text>
+              <Image 
+                source={require('../../assets/images/figma/new_home/hero_lobster.png')}
+                style={{ position: 'absolute', bottom: -10, right: -20, width: 100, height: 100 }}
+                resizeMode="contain"
+              />
               <TouchableOpacity style={styles.heroButton} onPress={() => router.push('/(tabs)/menu')}>
                 <Text style={styles.heroButtonText}>Explore Menu</Text>
                 <Ionicons name="arrow-forward" size={16} color="#fff" />
@@ -98,9 +102,11 @@ export default function HomeScreen() {
               <Text style={styles.promoTitle}>Subscription Meals</Text>
               <Text style={styles.promoSubtitle}>Long-term habit builder</Text>
             </View>
-            <View style={styles.promoImagePlaceholder}>
-              <Ionicons name="leaf" size={48} color={colors.primary} />
-            </View>
+            <Image
+              source={require('../../assets/images/subscription-img.webp')}
+              style={{ width: 140, height: 110, position: 'absolute', right: -10, bottom: -10 }}
+              resizeMode="contain"
+            />
           </LinearGradient>
         </TouchableOpacity>
 
@@ -120,27 +126,41 @@ export default function HomeScreen() {
               <Text style={styles.promoTitle}>Quick Meals</Text>
               <Text style={styles.promoSubtitle}>Instant healthy delivery</Text>
             </View>
-            <View style={styles.promoImagePlaceholder}>
-              <Ionicons name="flash" size={48} color={colors.accent.orange} />
-            </View>
+            <Image
+              source={require('../../assets/images/quick-meal.webp')}
+              style={{ width: 140, height: 110, position: 'absolute', right: -20, bottom: -20 }}
+              resizeMode="contain"
+            />
           </LinearGradient>
         </TouchableOpacity>
 
         {/* Consult a Dietician */}
         <TouchableOpacity
-          style={styles.sectionPadding}
+          className="relative overflow-hidden rounded-[14px] border border-[#F3F3F3] p-4 mx-5 mb-4"
           onPress={() => router.push('/consult')}
           activeOpacity={0.8}
         >
-          <View style={styles.consultCard}>
-            <View style={styles.consultIcon}>
-              <Ionicons name="medkit" size={28} color={colors.primary} />
+          <LinearGradient
+            colors={['rgba(255, 255, 255, 1)', 'rgba(223, 244, 244, 1)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+          <View className="flex-row items-end justify-between relative z-10">
+            <View className="w-[244px] flex-shrink border-transparent">
+              <Text className="text-[18px] font-semibold leading-[26px] tracking-tight text-black">
+                Consult a Dietician
+              </Text>
+              <Text className="mt-1 text-sm font-medium leading-[20px] text-[#7A7A7A]">
+                Personalized food guidance
+              </Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.consultTitle}>Consult a Dietician</Text>
-              <Text style={styles.consultSubtitle}>Personalized food guidance</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.disabled} />
+
+            <Image
+              source={require('../../assets/images/figma/new_home/consult_dietician-1fcf07.png')}
+              style={{ width: 82, height: 98, position: 'absolute', right: -10, bottom: -10 }}
+              resizeMode="contain"
+            />
           </View>
         </TouchableOpacity>
 
