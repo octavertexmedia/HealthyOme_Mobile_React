@@ -1,116 +1,141 @@
 import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Image
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { subscriptionApi } from '../../src/features/subscription/api/subscription.api';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
-import { formatPrice } from '../../src/shared/utils/helpers';
-import Loading from '../../src/shared/components/Loading';
+import { LinearGradient } from 'expo-linear-gradient';
 
-export default function SubscriptionPlans() {
+const PLANS = [
+  {
+    id: 'balanced',
+    title: 'Balanced Meal',
+    description: 'Daily healthy meals for a balanced lifestyle',
+    price: '₹690 / 3 days',
+    emoji: '🥗',
+    colors: ['#E8F5E9', '#C8E6C9'] as [string, string],
+    route: '/subscription/create',
+  },
+  {
+    id: 'protein',
+    title: 'High Protein Meal',
+    description: 'Protein-rich meals to support your fitness goals',
+    price: '₹890 / 3 days',
+    emoji: '💪',
+    colors: ['#FFF3E0', '#FFE0B2'] as [string, string],
+    route: '/subscription/create',
+  },
+  {
+    id: 'soups',
+    title: 'Soups',
+    description: 'Light, easy-to-digest meals for evenings',
+    price: '₹590 / 3 days',
+    emoji: '🍲',
+    colors: ['#E3F2FD', '#BBDEFB'] as [string, string],
+    route: '/subscription/create',
+  },
+  {
+    id: 'smoothies',
+    title: 'Smoothies',
+    description: 'Fresh and healthy refreshing smoothies',
+    price: '₹590 / 3 days',
+    emoji: '🥤',
+    colors: ['#FCE4EC', '#F8BBD0'] as [string, string],
+    route: '/subscription/create',
+  },
+];
+
+export default function SubscriptionPlansScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { data: plans, isLoading } = useQuery({
-    queryKey: ['subscriptionPlans'],
-    queryFn: subscriptionApi.getPlans,
-  });
-
-  if (isLoading) return <Loading fullScreen />;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={22} color="#111" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Choose Your Plan</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.headerTitle}>Available Plans</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <FlatList
-        data={plans || []}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {PLANS.map((plan) => (
           <TouchableOpacity
+            key={plan.id}
             style={styles.planCard}
-            activeOpacity={0.85}
-            onPress={() => router.push('/subscription/create')}
+            activeOpacity={0.9}
+            onPress={() => router.push(plan.route as any)}
           >
-            <View style={styles.planHeader}>
-              <View>
-                <Text style={styles.planType}>{item.meal_plan_type?.name || 'Plan'}</Text>
-                <Text style={styles.planPeriod}>{item.subscription_period?.name || ''}</Text>
+            <LinearGradient colors={plan.colors} style={styles.planCardInner}>
+              <View style={styles.planEmoji}>
+                <Text style={{ fontSize: 36 }}>{plan.emoji}</Text>
               </View>
-              {item.free_meals > 0 && (
-                <View style={styles.freeBadge}>
-                  <Text style={styles.freeBadgeText}>{item.free_meals} Free Meals</Text>
-                </View>
-              )}
-            </View>
-            <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice(item.price)}</Text>
-              {item.original_price && Number(item.original_price) > Number(item.price) && (
-                <Text style={styles.planOriginal}>{formatPrice(item.original_price)}</Text>
-              )}
-              {item.original_price && Number(item.original_price) > Number(item.price) && (
-                <View style={styles.saveBadge}>
-                  <Text style={styles.saveBadgeText}>
-                    Save {formatPrice(Number(item.original_price) - Number(item.price))}
-                  </Text>
-                </View>
-              )}
-            </View>
-            {item.cashback_percentage > 0 && (
-              <Text style={styles.cashback}>💸 {item.cashback_percentage}% cashback</Text>
-            )}
-            <View style={styles.planFooter}>
-              <Text style={styles.selectText}>Select Plan</Text>
-              <Ionicons name="arrow-forward" size={16} color={colors.primary} />
-            </View>
+              <View style={styles.planInfo}>
+                <Text style={styles.planTitle}>{plan.title}</Text>
+                <Text style={styles.planDesc}>{plan.description}</Text>
+                <Text style={styles.planPrice}>{plan.price}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#6B7280" />
+            </LinearGradient>
           </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>No subscription plans available</Text>
-          </View>
-        }
-      />
+        ))}
+
+        {/* Service Info */}
+        <View style={styles.serviceInfo}>
+          <ServiceInfoItem icon="shield-checkmark-outline" text="No hidden charges" />
+          <ServiceInfoItem icon="refresh-outline" text="Pause or cancel anytime" />
+          <ServiceInfoItem icon="time-outline" text="Fresh meals daily" />
+          <ServiceInfoItem icon="star-outline" text="Satisfaction guaranteed" />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function ServiceInfoItem({ icon, text }: { icon: string; text: string }) {
+  return (
+    <View style={styles.serviceRow}>
+      <Ionicons name={icon as any} size={18} color="#4B8E3D" />
+      <Text style={styles.serviceText}>{text}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: '#F6F7F8' },
+
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
   },
-  headerTitle: { ...typography.heading.lg, color: colors.text.primary },
-  listContent: { paddingHorizontal: spacing.xl, paddingBottom: 40 },
+  backBtn: { width: 40, height: 40, justifyContent: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: '#111' },
+
+  scrollContent: { padding: 16, gap: 16 },
+
   planCard: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl,
-    marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    borderRadius: 20, overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
   },
-  planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  planType: { ...typography.heading.md, color: colors.text.primary },
-  planPeriod: { ...typography.body.md, color: colors.text.secondary, marginTop: 2 },
-  freeBadge: { backgroundColor: colors.primaryLight, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.full },
-  freeBadgeText: { ...typography.body.xs, color: colors.primary, fontWeight: '600' },
-  planPricing: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg },
-  planPrice: { ...typography.heading.xl, color: colors.primary, fontSize: 28 },
-  planOriginal: { ...typography.body.lg, color: colors.text.disabled, textDecorationLine: 'line-through' },
-  saveBadge: { backgroundColor: colors.status.successBg, paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: borderRadius.sm },
-  saveBadgeText: { ...typography.body.xs, color: colors.status.success, fontWeight: '600' },
-  cashback: { ...typography.body.md, color: colors.accent.orange, marginTop: spacing.sm },
-  planFooter: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider,
+  planCardInner: {
+    flexDirection: 'row', alignItems: 'center', padding: 20, gap: 16,
   },
-  selectText: { ...typography.button.md, color: colors.primary },
-  emptyWrap: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { ...typography.body.md, color: colors.text.muted },
+  planEmoji: {
+    width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.6)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  planInfo: { flex: 1 },
+  planTitle: { fontSize: 17, fontWeight: '700', color: '#111', marginBottom: 4 },
+  planDesc: { fontSize: 13, color: '#6B7280', lineHeight: 18, marginBottom: 8 },
+  planPrice: { fontSize: 16, fontWeight: '600', color: '#4B8E3D' },
+
+  serviceInfo: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 20, marginTop: 8, gap: 14,
+  },
+  serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  serviceText: { fontSize: 14, color: '#6B7280' },
 });

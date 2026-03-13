@@ -6,6 +6,7 @@ export default function ConsultLayout() {
     <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="booking" />
+      <Stack.Screen name="intro" />
     </Stack>
   );
 }

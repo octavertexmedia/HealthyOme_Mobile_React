@@ -36,11 +36,11 @@ export default function FAQsScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        <TouchableOpacity style={styles.backCircle} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#111" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>FAQs</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 40 }} />
       </View>
       <FlatList
         data={items}
@@ -55,7 +55,7 @@ export default function FAQsScreen() {
           >
             <View style={styles.faqHeader}>
               <Text style={styles.faqQuestion}>{item.question}</Text>
-              <Ionicons name={expanded === item.id ? 'chevron-up' : 'chevron-down'} size={18} color={colors.text.muted} />
+              <Ionicons name={expanded === item.id ? 'chevron-up' : 'chevron-down'} size={18} color="#9CA3AF" />
             </View>
             {expanded === item.id && <Text style={styles.faqAnswer}>{item.answer}</Text>}
           </TouchableOpacity>
@@ -66,15 +66,22 @@ export default function FAQsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  headerTitle: { ...typography.heading.lg, color: colors.text.primary },
-  listContent: { paddingHorizontal: spacing.xl, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  header: { 
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
+    paddingHorizontal: 20, paddingBottom: 16 
+  },
+  backCircle: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center'
+  },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#111' },
+  listContent: { paddingHorizontal: 20, paddingBottom: 40 },
   faqCard: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg,
-    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+    backgroundColor: '#fff', borderRadius: 16, padding: 16,
+    marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB',
   },
   faqHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  faqQuestion: { ...typography.body.lg, color: colors.text.primary, fontWeight: '600', flex: 1, marginRight: spacing.md },
-  faqAnswer: { ...typography.body.md, color: colors.text.secondary, marginTop: spacing.md, lineHeight: 22 },
+  faqQuestion: { fontSize: 15, color: '#111', fontWeight: '600', flex: 1, marginRight: 16 },
+  faqAnswer: { fontSize: 14, color: '#6B7280', marginTop: 12, lineHeight: 22 },
 });

@@ -105,8 +105,8 @@ export default function VerifyScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        <TouchableOpacity style={styles.backButton} onPress={() => { router.dismissAll(); router.replace('/(tabs)'); }}>
+          <Ionicons name="close" size={28} color={colors.text.primary} />
         </TouchableOpacity>
 
         <Text style={styles.title}>Verify OTP</Text>

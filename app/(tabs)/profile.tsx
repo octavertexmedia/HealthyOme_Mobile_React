@@ -1,25 +1,12 @@
 import React from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
-
-const MENU_ITEMS = [
-  { icon: 'person-outline', label: 'Edit Profile', route: '/profile-pages/edit' },
-  { icon: 'location-outline', label: 'My Addresses', route: '/profile-pages/addresses' },
-  { icon: 'heart-outline', label: 'Favourites', route: '/profile-pages/favourites' },
-  { icon: 'pricetag-outline', label: 'Offers & Coupons', route: '/profile-pages/offers' },
-  { icon: 'gift-outline', label: 'Rewards', route: '/rewards' },
-  { icon: 'card-outline', label: 'Payment Modes', route: '/profile-pages/payment' },
-  { icon: 'notifications-outline', label: 'Notifications', route: '/profile-pages/notifications' },
-  { icon: 'help-circle-outline', label: 'FAQs', route: '/profile-pages/faqs' },
-  { icon: 'chatbubble-ellipses-outline', label: 'Help & Support', route: '/profile-pages/support' },
-  { icon: 'document-text-outline', label: 'Terms & Conditions', route: '/profile-pages/terms' },
-] as const;
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -27,146 +14,235 @@ export default function ProfileScreen() {
   const { user, isAuthenticated, logout } = useAuthStore();
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
+    logout();
+    router.replace('/(auth)/login');
   };
 
+  const sections = [
+    {
+      title: "Orders",
+      items: [
+        { label: "All Subscriptions", icon: "cube-outline", route: "/subscription" },
+        { label: "My Orders", icon: "bag-handle-outline", route: "/(tabs)/orders" },
+      ],
+    },
+    {
+      title: "Your Information",
+      items: [
+        { label: "Saved Address", icon: "location-outline", route: "/profile-pages/addresses" },
+        { label: "Edit Profile", icon: "person-outline", route: "/profile-pages/edit" },
+        { label: "Favourites", icon: "heart-outline", route: "/profile-pages/favourites" },
+      ],
+    },
+    {
+      title: "Payments",
+      items: [
+        { label: "My Rewards", icon: "gift-outline", route: "/rewards" },
+        { label: "Payment Modes", icon: "card-outline", route: "/profile-pages/payment" },
+        { label: "Offers", icon: "pricetag-outline", route: "/profile-pages/offers" },
+      ],
+    },
+    {
+      title: "Support",
+      items: [
+        { label: "Help & Support", icon: "help-circle-outline", route: "/profile-pages/support" },
+        { label: "FAQs", icon: "document-text-outline", route: "/profile-pages/faqs" },
+      ],
+    },
+    {
+      title: "Account",
+      items: [
+        { label: "Notification preferences", icon: "notifications-outline", route: "/profile-pages/notifications" },
+        { label: "Terms & Privacy", icon: "lock-closed-outline", route: "/profile-pages/terms" },
+        { label: "Logout", icon: "log-out-outline", route: "LOGOUT", isDanger: true },
+      ],
+    },
+  ];
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Profile Header */}
-        <View style={styles.profileHeader}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={36} color={colors.primary} />
-          </View>
-          <View style={styles.profileInfo}>
-            {isAuthenticated && user ? (
-              <>
-                <Text style={styles.profileName}>
-                  {user.first_name} {user.last_name || ''}
-                </Text>
-                <Text style={styles.profileEmail}>{user.email || user.username}</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.profileName}>Welcome!</Text>
-                <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-                  <Text style={styles.loginLink}>Login / Sign Up →</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
+    <View style={styles.container}>
+      {/* HEADER */}
+      <LinearGradient
+        colors={['#0F3D21', '#1E6F3E']}
+        style={[styles.headerGradient, { paddingTop: Math.max(insets.top, 20) }]}
+      >
+        <Text style={styles.headerTitle}>Your Account</Text>
+        <Text style={styles.headerSubtitle}>
+          {isAuthenticated && user ? (user.username || user.first_name || 'User') : 'Guest'}
+        </Text>
+      </LinearGradient>
 
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/(tabs)/orders')}>
-            <View style={[styles.quickActionIcon, { backgroundColor: '#E8F5E9' }]}>
-              <Ionicons name="receipt" size={20} color={colors.primary} />
-            </View>
-            <Text style={styles.quickActionLabel}>Orders</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/rewards')}>
-            <View style={[styles.quickActionIcon, { backgroundColor: '#FFF3E0' }]}>
-              <Ionicons name="gift" size={20} color={colors.accent.orange} />
-            </View>
-            <Text style={styles.quickActionLabel}>Rewards</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/subscription')}>
-            <View style={[styles.quickActionIcon, { backgroundColor: '#E3F2FD' }]}>
-              <Ionicons name="calendar" size={20} color={colors.status.info} />
-            </View>
-            <Text style={styles.quickActionLabel}>Plans</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/profile-pages/addresses')}>
-            <View style={[styles.quickActionIcon, { backgroundColor: '#FCE4EC' }]}>
-              <Ionicons name="location" size={20} color="#E91E63" />
-            </View>
-            <Text style={styles.quickActionLabel}>Address</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Menu Items */}
-        <View style={styles.menuSection}>
-          {MENU_ITEMS.map((item, index) => (
-            <TouchableOpacity
-              key={item.label}
-              style={[styles.menuItem, index === MENU_ITEMS.length - 1 && styles.menuItemLast]}
-              onPress={() => router.push(item.route as any)}
-              activeOpacity={0.7}
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
+        {/* ACTIVE SUBSCRIPTION CARD */}
+        <View style={styles.subscriptionSection}>
+          <TouchableOpacity 
+            activeOpacity={0.9}
+            style={styles.subscriptionCardShadow}
+            onPress={() => router.push('/subscription')}
+          >
+            <LinearGradient
+              colors={['#2E8B1D', '#1E6F3E']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={styles.subscriptionCard}
             >
-              <View style={styles.menuItemLeft}>
-                <Ionicons name={item.icon as any} size={20} color={colors.text.secondary} />
-                <Text style={styles.menuItemLabel}>{item.label}</Text>
+              <View style={styles.subHeader}>
+                <Text style={styles.subLabel}>ACTIVE SUBSCRIPTIONS</Text>
+                <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.9)" />
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.text.disabled} />
-            </TouchableOpacity>
-          ))}
+              <View style={styles.subBody}>
+                <Text style={styles.subTitle}>Balanced Meal</Text>
+                <Text style={styles.subDesc}>16 deliveries left • Expires 9 Feb</Text>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
 
-        {/* Logout */}
-        {isAuthenticated && (
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={20} color={colors.status.error} />
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
-        )}
+        {/* SECTIONS */}
+        {sections.map((section, sIdx) => (
+          <View key={section.title} style={styles.sectionWrap}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            
+            <View style={styles.sectionCard}>
+              {section.items.map((item, idx) => (
+                <TouchableOpacity
+                  key={item.label}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (item.route === 'LOGOUT') {
+                      handleLogout();
+                    } else if (item.route) {
+                      router.push(item.route as any);
+                    }
+                  }}
+                  style={[
+                    styles.sectionItemRow,
+                    idx !== section.items.length - 1 && styles.sectionItemBorder
+                  ]}
+                >
+                  <View style={styles.sectionItemLeft}>
+                    <Ionicons 
+                      name={item.icon as any} 
+                      size={20} 
+                      color={item.isDanger ? '#EF4444' : '#6B7280'} 
+                    />
+                    <Text style={[
+                      styles.sectionItemLabel, 
+                      item.isDanger ? { color: '#EF4444' } : { color: '#1F2937' }
+                    ]}>
+                      {item.label}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ))}
 
-        {/* Version */}
-        <Text style={styles.version}>Healthy-O-Me v1.0.0</Text>
       </ScrollView>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingBottom: 100 },
-  profileHeader: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl, gap: spacing.lg,
+  container: { flex: 1, backgroundColor: '#F6F6F6' },
+  headerGradient: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
-  avatar: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primaryLight,
-    justifyContent: 'center', alignItems: 'center',
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#fff',
   },
-  profileInfo: { flex: 1 },
-  profileName: { ...typography.heading.lg, color: colors.text.primary },
-  profileEmail: { ...typography.body.md, color: colors.text.secondary, marginTop: 2 },
-  loginLink: { ...typography.body.lg, color: colors.primary, marginTop: 4, fontWeight: '600' },
-  quickActions: {
-    flexDirection: 'row', justifyContent: 'space-around',
-    paddingHorizontal: spacing.xl, marginBottom: spacing.xxl,
+  headerSubtitle: {
+    marginTop: 4,
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.9)',
   },
-  quickAction: { alignItems: 'center', gap: spacing.sm },
-  quickActionIcon: {
-    width: 48, height: 48, borderRadius: borderRadius.lg,
-    justifyContent: 'center', alignItems: 'center',
+
+  /* Subscription Card */
+  subscriptionSection: {
+    paddingHorizontal: 16,
+    marginTop: -16, 
+    marginBottom: 8,
+    zIndex: 10,
   },
-  quickActionLabel: { ...typography.body.sm, color: colors.text.secondary },
-  menuSection: {
-    marginHorizontal: spacing.xl, backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl, borderWidth: 1, borderColor: colors.border,
-    overflow: 'hidden', ...shadows.sm,
+  subscriptionCardShadow: {
+    shadowColor: '#1E6F3E',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
   },
-  menuItem: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.lg,
-    borderBottomWidth: 1, borderBottomColor: colors.divider,
+  subscriptionCard: {
+    borderRadius: 16,
+    padding: 16,
   },
-  menuItemLast: { borderBottomWidth: 0 },
-  menuItemLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  menuItemLabel: { ...typography.body.lg, color: colors.text.primary },
-  logoutButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: spacing.sm, marginTop: spacing.xxl, paddingVertical: spacing.lg,
-    marginHorizontal: spacing.xl,
+  subHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  logoutText: { ...typography.button.md, color: colors.status.error },
-  version: {
-    ...typography.body.sm, color: colors.text.disabled,
-    textAlign: 'center', marginTop: spacing.xl, paddingBottom: spacing.xl,
+  subLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  subBody: {
+    marginTop: 8,
+  },
+  subTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  subDesc: {
+    marginTop: 4,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+  },
+
+  /* Sections */
+  sectionWrap: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9A9A9A',
+    textTransform: 'uppercase',
+  },
+  sectionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  sectionItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  sectionItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  sectionItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionItemLabel: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

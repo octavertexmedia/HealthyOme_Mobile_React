@@ -1,33 +1,22 @@
-import { MMKV } from 'react-native-mmkv';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StateStorage } from 'zustand/middleware';
 
-export const storage = new MMKV({
-  id: 'healthyome-app',
-});
-
-// Zustand persist adapter for MMKV
+// Zustand persist adapter for AsyncStorage
 export const zustandMMKVStorage: StateStorage = {
-  getItem: (name: string) => {
-    const value = storage.getString(name);
-    return value ?? null;
+  getItem: async (name: string) => {
+    return (await AsyncStorage.getItem(name)) ?? null;
   },
-  setItem: (name: string, value: string) => {
-    storage.set(name, value);
+  setItem: async (name: string, value: string) => {
+    await AsyncStorage.setItem(name, value);
   },
-  removeItem: (name: string) => {
-    storage.delete(name);
+  removeItem: async (name: string) => {
+    await AsyncStorage.removeItem(name);
   },
 };
 
-// Helper functions
-export const mmkvStorage = {
-  getString: (key: string) => storage.getString(key),
-  setString: (key: string, value: string) => storage.set(key, value),
-  getNumber: (key: string) => storage.getNumber(key),
-  setNumber: (key: string, value: number) => storage.set(key, value),
-  getBoolean: (key: string) => storage.getBoolean(key),
-  setBoolean: (key: string, value: boolean) => storage.set(key, value),
-  delete: (key: string) => storage.delete(key),
-  clearAll: () => storage.clearAll(),
-  getAllKeys: () => storage.getAllKeys(),
+// Async Storage wrapper for tokens
+export const storage = {
+  getString: async (key: string) => await AsyncStorage.getItem(key),
+  set: async (key: string, value: string) => await AsyncStorage.setItem(key, value),
+  delete: async (key: string) => await AsyncStorage.removeItem(key),
 };

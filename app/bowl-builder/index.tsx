@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -9,18 +9,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bowlApi } from '../../src/features/bowl/api/bowl.api';
 import { useBowlStore } from '../../src/features/bowl/store/bowl.store';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
-import { formatPrice } from '../../src/shared/utils/helpers';
-import Loading from '../../src/shared/components/Loading';
-import Button from '../../src/shared/components/Button';
+import DynamicBowl from '../../src/features/bowl/components/DynamicBowl';
 
 const { width } = Dimensions.get('window');
 
 export default function BowlBuilderScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { base, ingredients, preparation, totalPrice, setBase, toggleIngredient, setPreparation, reset } = useBowlStore();
+  
+  const { 
+    base, ingredients, preparation, totalPrice, 
+    setBase, toggleIngredient, setPreparation, reset 
+  } = useBowlStore();
+  
   const addItem = useCartStore((s) => s.addItem);
+  const [quantity, setQuantity] = useState(1);
 
   const { data: bases, isLoading: loadingBases } = useQuery({
     queryKey: ['bowlBases'],
@@ -32,183 +35,366 @@ export default function BowlBuilderScreen() {
     queryFn: () => bowlApi.getIngredients(),
   });
 
-  if (loadingBases || loadingIngredients) return <Loading fullScreen />;
+  const loading = loadingBases || loadingIngredients;
 
-  const ingredientTypes = ['vegetables', 'proteins', 'dressings', 'seeds', 'extras'];
-  const groupedIngredients: Record<string, any[]> = {};
+  const groupedIngredients: Record<string, any[]> = {
+    veggie: [],
+    protein: [],
+    seeds_nuts: [],
+    dressing: [],
+    gravy: [],
+  };
+
   (allIngredients || []).forEach((ing: any) => {
-    const type = ing.ingredient_type || 'extras';
+    let type = ing.ingredient_type || 'extras';
+    if (type === 'vegetables' || type === 'veggie') type = 'veggie';
+    else if (type === 'proteins' || type === 'protein') type = 'protein';
+    else if (type === 'seeds_nuts' || type === 'seeds') type = 'seeds_nuts';
+    else if (type === 'dressing') type = 'dressing';
+    else if (type === 'gravy') type = 'gravy';
+    
     if (!groupedIngredients[type]) groupedIngredients[type] = [];
     groupedIngredients[type].push(ing);
   });
 
   const handleAddToCart = () => {
     if (!base) return;
-    const bowlName = `Custom Bowl (${base.name})`;
+    
+    // Web app logic combines all extras strings
+    const bowlName = "Custom Bowl";
     addItem({
-      id: `bowl-${Date.now()}`,
+      id: `custom-bowl-${Date.now()}`,
       name: bowlName,
       price: totalPrice,
-      meta: { base, ingredients, preparation },
+      quantity,
+      meta: { 
+        base: base.name,
+        ingredients: ingredients.map(i => i.name),
+      },
     });
+    
     reset();
     router.back();
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ fontSize: 16, color: '#4B5563' }}>Loading bowl options...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ─── HEADER ─── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => { reset(); router.back(); }}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+          <Ionicons name="chevron-back" size={24} color="#141414" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Build Your Bowl</Text>
-        <TouchableOpacity onPress={reset}>
-          <Ionicons name="refresh" size={22} color={colors.text.secondary} />
+        <Text style={styles.headerTitle}>Make your bowl</Text>
+        <TouchableOpacity style={styles.headerHeartBtn}>
+          <Ionicons name="heart-outline" size={20} color="#111" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Bowl Preview */}
-        <View style={styles.preview}>
-          <Text style={{ fontSize: 56 }}>🥣</Text>
-          <Text style={styles.previewTitle}>{base ? base.name : 'Choose a base'}</Text>
-          <Text style={styles.previewIngredients}>
-            {ingredients.length > 0 ? `+ ${ingredients.length} toppings` : 'Add your toppings'}
-          </Text>
-          <Text style={styles.previewPrice}>{formatPrice(totalPrice)}</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* ─── DYNAMIC BOWL PREVIEW ─── */}
+        <View style={styles.previewContainer}>
+          <DynamicBowl base={base} ingredients={ingredients} />
         </View>
 
-        {/* Base Selection */}
-        <Text style={styles.sectionTitle}>Choose Your Base</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-          {(bases || []).map((b: any) => (
-            <TouchableOpacity
-              key={b.id}
-              style={[styles.baseCard, base?.id === b.id && styles.baseCardActive]}
-              onPress={() => setBase(b)}
-            >
-              <Text style={styles.baseIcon}>🍚</Text>
-              <Text style={[styles.baseName, base?.id === b.id && styles.baseNameActive]}>{b.name}</Text>
-              <Text style={[styles.basePrice, base?.id === b.id && styles.basePriceActive]}>{formatPrice(b.price)}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* ─── OPTIONS ─── */}
+        <View style={styles.optionsWrap}>
+          <View style={styles.chooseTitleWrap}>
+            <Text style={styles.chooseTitle}>Choose your items</Text>
+          </View>
+          
+          {/* Base */}
+          <BowlSection 
+            title="Base" 
+            required 
+            single
+            options={(bases || []).map((b: any) => ({ ...b, label: b.name, icon_type: 'veg' }))} 
+            selected={base ? [base.id] : []}
+            onSelect={(id: string) => {
+              const b = bases?.find((x: any) => x.id === id);
+              if(b) setBase(b);
+            }}
+          />
 
-        {/* Preparation */}
-        <Text style={styles.sectionTitle}>Preparation</Text>
-        <View style={styles.prepRow}>
-          {(['warm', 'cold'] as const).map((p) => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.prepChip, preparation === p && styles.prepChipActive]}
-              onPress={() => setPreparation(p)}
-            >
-              <Text style={{ fontSize: 18 }}>{p === 'warm' ? '🔥' : '❄️'}</Text>
-              <Text style={[styles.prepText, preparation === p && styles.prepTextActive]}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {/* Veggies */}
+          <BowlSection 
+            title="Veggies" 
+            options={(groupedIngredients['veggie'] || []).map(i => ({ ...i, label: i.name }))} 
+            selected={ingredients.map(i => i.id)}
+            onSelect={(id: string) => {
+              const item = groupedIngredients['veggie']?.find(x => x.id === id);
+              if(item) toggleIngredient(item);
+            }}
+          />
+
+          {/* Protein */}
+          <BowlSection 
+            title="Protein" 
+            options={(groupedIngredients['protein'] || []).map(i => ({ ...i, label: i.name }))} 
+            selected={ingredients.map(i => i.id)}
+            onSelect={(id: string) => {
+              const item = groupedIngredients['protein']?.find(x => x.id === id);
+              if(item) toggleIngredient(item);
+            }}
+          />
+
+          {/* Seeds & Nuts */}
+          <BowlSection 
+            title="Seeds & Nuts" 
+            options={(groupedIngredients['seeds_nuts'] || []).map(i => ({ ...i, label: i.name }))} 
+            selected={ingredients.map(i => i.id)}
+            onSelect={(id: string) => {
+              const item = groupedIngredients['seeds_nuts']?.find(x => x.id === id);
+              if(item) toggleIngredient(item);
+            }}
+          />
+
+          {/* Dressings (Sauces / Dips) */}
+          {groupedIngredients['dressing'] && groupedIngredients['dressing'].length > 0 && (
+            <BowlSection 
+              title="Sauces & Dips" 
+              options={groupedIngredients['dressing'].map(i => ({ ...i, label: i.name }))} 
+              selected={ingredients.map(i => i.id)}
+              onSelect={(id: string) => {
+                const item = groupedIngredients['dressing']?.find(x => x.id === id);
+                if(item) toggleIngredient(item);
+              }}
+            />
+          )}
+
+          {/* Gravy */}
+          {groupedIngredients['gravy'] && groupedIngredients['gravy'].length > 0 && (
+            <BowlSection 
+              title="Gravy (applicable on rice only)" 
+              options={groupedIngredients['gravy'].map(i => ({ ...i, label: i.name }))} 
+              selected={ingredients.map(i => i.id)}
+              onSelect={(id: string) => {
+                const item = groupedIngredients['gravy']?.find(x => x.id === id);
+                if(item) toggleIngredient(item);
+              }}
+            />
+          )}
+
+          {/* Preparation */}
+          <BowlSection 
+            title={`Preparation: (Warm/Cold): ${preparation.charAt(0).toUpperCase() + preparation.slice(1)}`} 
+            single
+            options={[
+              { id: 'warm', label: 'Warm', price: 0, icon_type: 'none' },
+              { id: 'cold', label: 'Cold', price: 0, icon_type: 'none' }
+            ]}
+            selected={[preparation]}
+            onSelect={(id: string) => setPreparation(id as 'warm' | 'cold')}
+          />
+
         </View>
-
-        {/* Ingredients by type */}
-        {ingredientTypes.map((type) => {
-          const items = groupedIngredients[type];
-          if (!items || items.length === 0) return null;
-          return (
-            <View key={type}>
-              <Text style={styles.sectionTitle}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
-              <View style={styles.ingredientGrid}>
-                {items.map((ing: any) => {
-                  const selected = ingredients.some(i => i.id === ing.id);
-                  return (
-                    <TouchableOpacity
-                      key={ing.id}
-                      style={[styles.ingredientChip, selected && styles.ingredientChipActive]}
-                      onPress={() => toggleIngredient(ing)}
-                    >
-                      <Text style={[styles.ingredientName, selected && styles.ingredientNameActive]}>
-                        {ing.name}
-                      </Text>
-                      <Text style={[styles.ingredientPrice, selected && styles.ingredientPriceActive]}>
-                        +{formatPrice(ing.price)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })}
-
-        <View style={{ height: 120 }} />
       </ScrollView>
 
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Button
-          title={`Add Bowl to Cart · ${formatPrice(totalPrice)}`}
+      {/* ─── FOOTER ─── */}
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        <View style={styles.qtyControls}>
+          <TouchableOpacity 
+            style={styles.qtyBtn} 
+            onPress={() => setQuantity(Math.max(1, quantity - 1))}
+          >
+            <Text style={styles.qtyBtnText}>−</Text>
+          </TouchableOpacity>
+          <Text style={styles.qtyText}>{quantity}</Text>
+          <TouchableOpacity 
+            style={styles.qtyBtnPlus} 
+            onPress={() => setQuantity(quantity + 1)}
+          >
+            <Text style={styles.qtyBtnPlusText}>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.addBtn, !base && styles.addBtnDisabled]}
           onPress={handleAddToCart}
           disabled={!base}
-          fullWidth
-          size="lg"
-        />
+          activeOpacity={0.9}
+        >
+          <Text style={styles.addBtnText}>Add ₹{totalPrice * quantity}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+/* ─── HELPER COMPONENTS ─── */
+
+function BowlSection({ title, required, options, selected, onSelect, single }: any) {
+  return (
+    <View style={styles.sectionContainer}>
+      {/* Header */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {required ? (
+          <View style={styles.badgeRequired}>
+            <Text style={styles.badgeRequiredText}>*Required</Text>
+          </View>
+        ) : (
+          <Text style={styles.badgeOptional}>Optional</Text>
+        )}
+      </View>
+
+      {/* Options */}
+      <View style={styles.optionsList}>
+        {options.map((opt: any) => {
+          const active = selected.includes(opt.id);
+          const price = opt.price || 0;
+
+          // Determine indicator color based on icon_type
+          let indicatorColor = '#08B853'; // default veg
+          if (opt.icon_type === 'non_veg') indicatorColor = '#D93616';
+          if (opt.icon_type === 'egg') indicatorColor = '#E2BE24';
+
+          const showIndicator = opt.icon_type && opt.icon_type !== 'none';
+
+          return (
+            <TouchableOpacity 
+              key={opt.id} 
+              style={styles.optionRow}
+              activeOpacity={0.7}
+              onPress={() => onSelect(opt.id)}
+            >
+              <View style={styles.optionLeft}>
+                {showIndicator && (
+                   <View style={[styles.vegIndicator, { borderColor: indicatorColor }]}>
+                     <View style={[styles.vegDot, { backgroundColor: indicatorColor }]} />
+                   </View>
+                )}
+                <Text style={styles.optionLabel}>
+                  {opt.label}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Text style={styles.optionPrice}>₹ {price}</Text>
+
+                {single ? (
+                  /* Radio button */
+                  <View style={[styles.radioOutline, active && styles.radioOutlineActive]}>
+                    {active && <View style={styles.radioDot} />}
+                  </View>
+                ) : (
+                  /* Checkbox */
+                  <View style={[styles.checkboxOutline, active && styles.checkboxOutlineActive]}>
+                    {active && <Ionicons name="checkmark" size={14} color="#fff" />}
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: '#FDE6C6' },
+  
+  /* Header */
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    paddingHorizontal: 20, paddingVertical: 8,
   },
-  headerTitle: { ...typography.heading.lg, color: colors.text.primary },
-  scrollContent: { paddingHorizontal: spacing.xl },
-  preview: {
-    alignItems: 'center', paddingVertical: spacing.xxl, marginBottom: spacing.lg,
-    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
-    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  headerBtn: { padding: 4 },
+  headerTitle: { fontSize: 20, fontWeight: '600', color: '#141414' },
+  headerHeartBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff',
+    justifyContent: 'center', alignItems: 'center',
   },
-  previewTitle: { ...typography.heading.md, color: colors.text.primary, marginTop: spacing.md },
-  previewIngredients: { ...typography.body.md, color: colors.text.secondary, marginTop: spacing.xs },
-  previewPrice: { ...typography.heading.xl, color: colors.primary, marginTop: spacing.md, fontSize: 28 },
-  sectionTitle: { ...typography.heading.sm, color: colors.text.primary, marginBottom: spacing.md, marginTop: spacing.lg },
-  horizontalScroll: { marginBottom: spacing.md },
-  baseCard: {
-    width: 100, padding: spacing.lg, alignItems: 'center', borderRadius: borderRadius.xl,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-    marginRight: spacing.md, ...shadows.sm,
+
+  /* Preview */
+  previewContainer: {
+    width: '100%', height: 260, justifyContent: 'center', alignItems: 'center',
+    marginBottom: 0, marginTop: 6,
   },
-  baseCardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  baseIcon: { fontSize: 28, marginBottom: spacing.sm },
-  baseName: { ...typography.body.sm, color: colors.text.primary, fontWeight: '600', textAlign: 'center' },
-  baseNameActive: { color: colors.primary },
-  basePrice: { ...typography.body.xs, color: colors.text.muted, marginTop: 2 },
-  basePriceActive: { color: colors.primary },
-  prepRow: { flexDirection: 'row', gap: spacing.md },
-  prepChip: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    paddingVertical: spacing.lg, borderRadius: borderRadius.lg, backgroundColor: colors.surface,
-    borderWidth: 1, borderColor: colors.border,
+
+  /* Options Wrapper */
+  optionsWrap: {
+    backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    minHeight: 500, paddingTop: 16,
   },
-  prepChipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  prepText: { ...typography.body.lg, color: colors.text.secondary, fontWeight: '600' },
-  prepTextActive: { color: colors.primary },
-  ingredientGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  ingredientChip: {
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.border,
-    backgroundColor: colors.surface,
+  chooseTitleWrap: {
+    paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6'
   },
-  ingredientChipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  ingredientName: { ...typography.body.sm, color: colors.text.primary },
-  ingredientNameActive: { color: colors.primary, fontWeight: '600' },
-  ingredientPrice: { ...typography.body.xs, color: colors.text.muted, textAlign: 'center' },
-  ingredientPriceActive: { color: colors.primary },
-  bottomBar: {
+  chooseTitle: {
+    fontSize: 16, fontWeight: '600', color: '#0B262F'
+  },
+
+  /* Section */
+  sectionContainer: {
+    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+  },
+  sectionHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#111' },
+  badgeRequired: {
+    backgroundColor: '#FCE9E5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+  },
+  badgeRequiredText: { fontSize: 12, fontWeight: '500', color: '#C7463A' },
+  badgeOptional: { fontSize: 12, color: '#6C6C6C' },
+  
+  optionsList: { gap: 16 },
+  optionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  optionLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  
+  vegIndicator: {
+    width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: '#08B853',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  vegDot: {
+    width: 10, height: 10, borderRadius: 5, backgroundColor: '#08B853',
+  },
+
+  optionLabel: { fontSize: 14, color: '#111', fontWeight: '500' },
+  optionPrice: { fontSize: 14, color: '#0B262F' },
+
+  radioOutline: {
+    width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: '#D1D5DB',
+    justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff'
+  },
+  radioOutlineActive: { borderColor: '#4B8E3D' },
+  radioDot: {
+    width: 10, height: 10, borderRadius: 5, backgroundColor: '#4B8E3D',
+  },
+
+  checkboxOutline: {
+    width: 20, height: 20, borderRadius: 4, borderWidth: 1.5, borderColor: '#D5D8D7',
+    justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff'
+  },
+  checkboxOutlineActive: { backgroundColor: '#2C921D', borderColor: '#2C921D' },
+
+  /* Footer */
+  footer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border,
-    paddingHorizontal: spacing.xl, paddingTop: spacing.lg,
+    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB',
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, gap: 16,
   },
+  qtyControls: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#098323',
+    borderRadius: 999, overflow: 'hidden', height: 48,
+  },
+  qtyBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+  qtyBtnText: { fontSize: 18, color: '#111' },
+  qtyBtnPlus: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+  qtyBtnPlusText: { fontSize: 18, color: '#4B8E3D' },
+  qtyText: { width: 28, textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#111' },
+  
+  addBtn: {
+    flex: 1, height: 48, borderRadius: 999, backgroundColor: '#2C921D',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  addBtnDisabled: { backgroundColor: '#D1D5DB' },
+  addBtnText: { color: '#fff', fontSize: 16, fontWeight: '500' },
 });

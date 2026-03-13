@@ -1,83 +1,81 @@
 import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import apiClient from '../../src/shared/api/client';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function OffersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { data: coupons } = useQuery({
-    queryKey: ['coupons'],
-    queryFn: async () => {
-      const res = await apiClient.get('/coupons/');
-      return Array.isArray(res.data) ? res.data : res.data?.results || [];
-    },
-  });
+
+  const OFFERS = [
+    { code: 'FIRST20', title: '20% off your first order', desc: 'Valid for new users only. Min. order ₹299.', expiry: 'Expires Mar 31, 2026' },
+    { code: 'HEALTH50', title: '₹50 off subscription', desc: 'On your first subscription plan purchase.', expiry: 'Expires Apr 15, 2026' },
+    { code: 'SUMMER', title: 'Free delivery this week', desc: 'No minimum order required.', expiry: 'Expires Mar 17, 2026' },
+  ];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        <TouchableOpacity style={styles.backCircle} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#111" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Offers & Coupons</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 40 }} />
       </View>
-      <FlatList
-        data={coupons || []}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <View style={styles.couponCard}>
-            <View style={styles.couponLeft}>
-              <View style={styles.couponBadge}>
-                <Ionicons name="pricetag" size={18} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.couponCode}>{item.code}</Text>
-                <Text style={styles.couponDesc}>{item.description || `Save ${item.discount_percentage}%`}</Text>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {OFFERS.map((offer, idx) => (
+          <View key={idx} style={styles.offerCard}>
+            <LinearGradient
+              colors={['#D1FADF', '#ECFDF5']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={styles.offerLeft}
+            >
+              <Ionicons name="pricetag" size={24} color="#2C921D" />
+              <Text style={styles.offerCode}>{offer.code}</Text>
+            </LinearGradient>
+            <View style={styles.offerRight}>
+              <Text style={styles.offerTitle}>{offer.title}</Text>
+              <Text style={styles.offerDesc}>{offer.desc}</Text>
+              <View style={styles.offerExpiryRow}>
+                <Ionicons name="time-outline" size={14} color="#9CA3AF" />
+                <Text style={styles.offerExpiryText}>{offer.expiry}</Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.copyBtn}>
-              <Text style={styles.copyBtnText}>COPY</Text>
-            </TouchableOpacity>
           </View>
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyWrap}>
-            <Ionicons name="pricetag-outline" size={48} color={colors.text.disabled} />
-            <Text style={styles.emptyText}>No offers available</Text>
-          </View>
-        }
-      />
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  headerTitle: { ...typography.heading.lg, color: colors.text.primary },
-  listContent: { paddingHorizontal: spacing.xl, paddingBottom: 40 },
-  couponCard: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg,
-    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', ...shadows.sm,
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  header: { 
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
+    paddingHorizontal: 20, paddingBottom: 16 
   },
-  couponLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  couponBadge: {
-    width: 40, height: 40, borderRadius: borderRadius.md, backgroundColor: colors.primaryLight,
-    justifyContent: 'center', alignItems: 'center',
+  backCircle: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center'
   },
-  couponCode: { ...typography.heading.sm, color: colors.text.primary },
-  couponDesc: { ...typography.body.sm, color: colors.text.secondary, marginTop: 2 },
-  copyBtn: { backgroundColor: colors.primaryLight, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.full },
-  copyBtnText: { ...typography.button.sm, color: colors.primary },
-  emptyWrap: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { ...typography.body.md, color: colors.text.muted, marginTop: spacing.md },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#111' },
+  
+  scrollContent: { padding: 20 },
+  offerCard: {
+    flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+  },
+  offerLeft: {
+    width: 90, justifyContent: 'center', alignItems: 'center', padding: 16,
+  },
+  offerCode: { fontSize: 12, fontWeight: '800', color: '#2C921D', marginTop: 8, textAlign: 'center' },
+  offerRight: { flex: 1, padding: 16, justifyContent: 'center' },
+  offerTitle: { fontSize: 16, fontWeight: '600', color: '#111', marginBottom: 4 },
+  offerDesc: { fontSize: 13, color: '#6B7280', marginBottom: 12, lineHeight: 18 },
+  offerExpiryRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  offerExpiryText: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
 });

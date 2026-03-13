@@ -60,7 +60,7 @@ export default function LoginScreen() {
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* Back Button */}
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => { router.dismissAll(); router.replace('/(tabs)'); }}>
             <Ionicons name="close" size={24} color={colors.text.primary} />
           </TouchableOpacity>
 

@@ -1,87 +1,159 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
-import Button from '../../src/shared/components/Button';
+import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import apiClient from '../../src/shared/api/client';
 
-const BENEFITS = [
-  { icon: '💰', title: 'Save More', desc: 'Up to 30% cheaper than daily orders' },
-  { icon: '🥗', title: 'Fresh Daily', desc: 'Meals prepared fresh every day' },
-  { icon: '🎯', title: 'Stay Consistent', desc: 'Build healthy eating habits' },
-  { icon: '📅', title: 'Flexible Plans', desc: 'Hold, pause, or cancel anytime' },
-  { icon: '🏷️', title: 'Free Meals', desc: 'Get bonus free meals included' },
-  { icon: '💸', title: 'Cashback', desc: 'Earn cashback on every plan' },
-];
+// ─── Types ───────────────────────────────
+type ActiveSub = {
+  id: number;
+  meal_plan_type: { name: string };
+  subscription_period: { name: string };
+  category: { name: string };
+  deliveries_left: number;
+  total_deliveries: number;
+  status: string;
+};
 
-export default function SubscriptionIntro() {
+function SubCard({ sub }: { sub: ActiveSub }) {
+  const pct = Math.round((sub.deliveries_left / sub.total_deliveries) * 100);
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <View>
+          <Text style={styles.cardTitle}>{sub.meal_plan_type?.name || 'Subscription'}</Text>
+          <Text style={styles.cardSub}>
+            {sub.subscription_period?.name} | {sub.category?.name}
+          </Text>
+        </View>
+        {sub.status && sub.status !== 'Active' && (
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>{sub.status}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Progress Bar */}
+      <View style={styles.progressWrap}>
+        <View style={[styles.progressBar, { width: `${pct}%` as any }]} />
+      </View>
+      <Text style={styles.progressLabel}>
+        {sub.deliveries_left} of {sub.total_deliveries} deliveries left
+      </Text>
+    </View>
+  );
+}
+
+export default function SubscriptionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  const { data: subs, isLoading } = useQuery({
+    queryKey: ['subscriptions', 'active'],
+    queryFn: async () => {
+      const res = await apiClient.get('/subscriptions/my/');
+      return res.data as ActiveSub[];
+    },
+    enabled: isAuthenticated,
+  });
+
+  const subscriptions = subs || [];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
-      </TouchableOpacity>
+      {/* Dark green background header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+          <Ionicons name="close" size={24} color="#fff" />
+        </TouchableOpacity>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <LinearGradient colors={['#E8F5E9', '#C8E6C9']} style={styles.heroBanner}>
-          <Text style={{ fontSize: 48 }}>🍽️</Text>
-          <Text style={styles.heroTitle}>Subscription Meals</Text>
-          <Text style={styles.heroSubtitle}>Healthy meals delivered daily at the best price</Text>
-        </LinearGradient>
-
-        <Text style={styles.sectionTitle}>Why Subscribe?</Text>
-
-        <View style={styles.benefitsGrid}>
-          {BENEFITS.map((b) => (
-            <View key={b.title} style={styles.benefitCard}>
-              <Text style={styles.benefitIcon}>{b.icon}</Text>
-              <Text style={styles.benefitTitle}>{b.title}</Text>
-              <Text style={styles.benefitDesc}>{b.desc}</Text>
-            </View>
-          ))}
+        <View style={styles.headerTextWrap}>
+          <Text style={styles.headerCount}>{subscriptions.length}</Text>
+          <Text style={styles.headerLabel}>Active subscriptions</Text>
         </View>
+      </View>
 
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {isLoading ? (
+          <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />
+        ) : subscriptions.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>No active subscriptions</Text>
+            <TouchableOpacity style={styles.browsePlansBtn} onPress={() => router.push('/subscription/plans')}>
+              <Text style={styles.browsePlansBtnText}>Browse Plans</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          subscriptions.map((sub) => <SubCard key={sub.id} sub={sub} />)
+        )}
+
+        {/* Spacer for bottom bar */}
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Button
-          title="View Plans & Pricing"
-          onPress={() => router.push('/subscription/plans')}
-          fullWidth
-          size="lg"
-        />
+      {/* Bottom CTA */}
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
+        <TouchableOpacity style={styles.bottomBtn} onPress={() => router.push('/subscription/plans')}>
+          <Text style={styles.bottomBtnText}>+ Add another plan</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  backBtn: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
-  scrollContent: { paddingHorizontal: spacing.xl },
-  heroBanner: {
-    borderRadius: borderRadius.xl, padding: spacing.xxl, alignItems: 'center',
-    marginBottom: spacing.xxl,
+  container: { flex: 1, backgroundColor: '#0B3F1F' },
+
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
   },
-  heroTitle: { ...typography.heading.xl, color: colors.text.primary, marginTop: spacing.md, textAlign: 'center' },
-  heroSubtitle: { ...typography.body.lg, color: colors.text.secondary, marginTop: spacing.sm, textAlign: 'center' },
-  sectionTitle: { ...typography.heading.lg, color: colors.text.primary, marginBottom: spacing.lg },
-  benefitsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  benefitCard: {
-    width: '47%', backgroundColor: colors.surface, borderRadius: borderRadius.xl,
-    padding: spacing.lg, borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  closeBtn: { width: 36, height: 36, justifyContent: 'center' },
+  headerTextWrap: { marginTop: 24 },
+  headerCount: { fontSize: 40, fontWeight: '700', color: '#fff', lineHeight: 44 },
+  headerLabel: { fontSize: 24, color: '#fff', marginTop: 4 },
+
+  scrollContent: { paddingHorizontal: 16 },
+
+  card: {
+    backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16,
   },
-  benefitIcon: { fontSize: 28, marginBottom: spacing.sm },
-  benefitTitle: { ...typography.heading.sm, color: colors.text.primary, marginBottom: spacing.xs },
-  benefitDesc: { ...typography.body.sm, color: colors.text.secondary, lineHeight: 18 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
+  cardSub: { fontSize: 14, color: '#6B7280', marginTop: 4 },
+  statusBadge: {
+    backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+  },
+  statusBadgeText: { fontSize: 12, color: '#92400E', fontWeight: '600' },
+
+  progressWrap: {
+    height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden', marginBottom: 8,
+  },
+  progressBar: { height: '100%', backgroundColor: '#4B8E3D', borderRadius: 4 },
+  progressLabel: { fontSize: 13, color: '#6B7280' },
+
+  emptyWrap: { alignItems: 'center', marginTop: 60 },
+  emptyText: { fontSize: 18, color: 'rgba(255,255,255,0.7)', marginBottom: 20 },
+  browsePlansBtn: {
+    backgroundColor: '#fff', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 999,
+  },
+  browsePlansBtnText: { color: '#2E7D32', fontWeight: '600', fontSize: 16 },
+
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border,
-    paddingHorizontal: spacing.xl, paddingTop: spacing.lg,
+    backgroundColor: 'rgba(11,63,31,0.98)',
+    paddingHorizontal: 16, paddingTop: 16,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)',
   },
+  bottomBtn: {
+    backgroundColor: '#fff', borderRadius: 999, paddingVertical: 16, alignItems: 'center',
+  },
+  bottomBtnText: { fontSize: 16, fontWeight: '600', color: '#2E7D32' },
 });

@@ -16,4 +16,13 @@ export const rewardsApi = {
     const response = await apiClient.post('/rewards/claim/', { reward_id: rewardId });
     return response.data;
   },
+
+  getUserPoints: async () => {
+    try {
+      const response = await apiClient.get('/rewards/points/');
+      return response.data?.points || response.data?.total_points || 0;
+    } catch {
+      return 0;
+    }
+  },
 };

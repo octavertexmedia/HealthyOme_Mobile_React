@@ -1,44 +1,60 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, typography } from '../../src/shared/theme';
 
 export default function TermsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  const SECTIONS = [
+    { title: '1. Acceptance of Terms', body: 'By using Healthy-O-Me services, you confirm you have read and agree to be bound by these Terms and Conditions. If you do not agree, please do not use our service.' },
+    { title: '2. Service Description', body: 'Healthy-O-Me provides fresh, nutritionist-approved meal delivery services including subscription plans, à la carte orders, and dietician consultations.' },
+    { title: '3. Order & Delivery Policy', body: 'Orders are confirmed only after payment. Delivery timelines are estimates. Healthy-O-Me is not liable for delays due to traffic, weather, or other factors beyond our control.' },
+    { title: '4. Cancellation Policy', body: 'Subscriptions may be paused or cancelled at any time. Refunds for active subscription cycles are pro-rated and processed within 5–7 business days.' },
+    { title: '5. Privacy', body: 'Your data is collected and processed in accordance with our Privacy Policy. We do not sell personal information to third parties.' },
+  ];
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        <TouchableOpacity style={styles.backCircle} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#111" />
         </TouchableOpacity>
-        <Text style={typography.heading.lg}>Terms & Conditions</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.headerTitle}>Terms & Conditions</Text>
+        <View style={{ width: 40 }} />
       </View>
-      <ScrollView contentContainerStyle={{ padding: spacing.xl }}>
-        <Text style={styles.section}>1. Acceptance of Terms</Text>
-        <Text style={styles.body}>By accessing and using the Healthy-O-Me app, you agree to be bound by these Terms and Conditions.</Text>
-        <Text style={styles.section}>2. Service Description</Text>
-        <Text style={styles.body}>Healthy-O-Me provides healthy meal delivery services, subscription plans, and nutritional consultation services.</Text>
-        <Text style={styles.section}>3. User Accounts</Text>
-        <Text style={styles.body}>You must provide accurate information when creating an account. You are responsible for maintaining the confidentiality of your account.</Text>
-        <Text style={styles.section}>4. Orders & Delivery</Text>
-        <Text style={styles.body}>Orders are subject to availability and delivery area coverage. We reserve the right to cancel orders if delivery is not feasible.</Text>
-        <Text style={styles.section}>5. Subscriptions</Text>
-        <Text style={styles.body}>Subscription plans auto-renew unless cancelled. You may pause or cancel subscriptions from your profile settings.</Text>
-        <Text style={styles.section}>6. Privacy</Text>
-        <Text style={styles.body}>We collect and process personal data in accordance with our Privacy Policy. Your data is securely stored and never shared without consent.</Text>
-        <Text style={styles.section}>7. Contact</Text>
-        <Text style={styles.body}>For queries, reach out to support@healthyome.com</Text>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Text style={styles.lastUpdated}>Last updated: March 2026</Text>
+        
+        {SECTIONS.map((section, idx) => (
+          <View key={idx} style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <Text style={styles.sectionBody}>{section.body}</Text>
+          </View>
+        ))}
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  section: { ...typography.heading.sm, color: colors.text.primary, marginTop: spacing.xxl, marginBottom: spacing.sm },
-  body: { ...typography.body.md, color: colors.text.secondary, lineHeight: 22 },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  header: { 
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
+    paddingHorizontal: 20, paddingBottom: 16 
+  },
+  backCircle: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center'
+  },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#111' },
+  
+  scrollContent: { padding: 24, paddingBottom: 100 },
+  lastUpdated: { fontSize: 13, color: '#9CA3AF', marginBottom: 24 },
+  sectionBlock: { marginBottom: 24 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 8 },
+  sectionBody: { fontSize: 14, color: '#6B7280', lineHeight: 22 },
 });

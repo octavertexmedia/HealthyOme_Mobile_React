@@ -1,24 +1,77 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, typography } from '../../src/shared/theme';
-import EmptyState from '../../src/shared/components/EmptyState';
 
-export default function PaymentScreen() {
+export default function PaymentModesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  const PAYMENT_MODES = [
+    { icon: 'card', label: 'Credit / Debit Card', subtitle: 'Visa, Mastercard, RuPay' },
+    { icon: 'business', label: 'Net Banking', subtitle: 'All major banks supported' },
+    { icon: 'qr-code', label: 'UPI', subtitle: 'GPay, PhonePe, Paytm, BHIM' },
+    { icon: 'wallet', label: 'Ola Money / Paytm Wallet', subtitle: 'Pay via digital wallet' },
+    { icon: 'cash', label: 'Cash on Delivery', subtitle: 'Pay when you receive' },
+  ];
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.md }}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backCircle} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#111" />
         </TouchableOpacity>
-        <Text style={typography.heading.lg}>Payment Modes</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.headerTitle}>Payment Modes</Text>
+        <View style={{ width: 40 }} />
       </View>
-      <EmptyState icon="card-outline" title="No Saved Payment Methods" description="Add a payment method for faster checkout" />
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.card}>
+          {PAYMENT_MODES.map((pm, idx) => (
+            <React.Fragment key={pm.label}>
+              <View style={styles.tile}>
+                <View style={styles.iconBox}>
+                  <Ionicons name={pm.icon as any} size={22} color="#2C921D" />
+                </View>
+                <View style={styles.tileInfo}>
+                  <Text style={styles.tileLabel}>{pm.label}</Text>
+                  <Text style={styles.tileSub}>{pm.subtitle}</Text>
+                </View>
+              </View>
+              {idx < PAYMENT_MODES.length - 1 && <View style={styles.divider} />}
+            </React.Fragment>
+          ))}
+        </View>
+      </ScrollView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  header: { 
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
+    paddingHorizontal: 20, paddingBottom: 16 
+  },
+  backCircle: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center'
+  },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#111' },
+  
+  scrollContent: { padding: 20 },
+  card: {
+    backgroundColor: '#fff', borderRadius: 16, paddingVertical: 8,
+    borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  tile: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 16 },
+  iconBox: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: '#ECFDF5',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  tileInfo: { flex: 1 },
+  tileLabel: { fontSize: 15, fontWeight: '500', color: '#111', marginBottom: 2 },
+  tileSub: { fontSize: 13, color: '#6B7280' },
+  divider: { height: 1, backgroundColor: '#F3F4F6', marginLeft: 76 },
+});

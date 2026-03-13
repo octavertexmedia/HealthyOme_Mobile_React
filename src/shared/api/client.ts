@@ -13,8 +13,8 @@ const apiClient = axios.create({
 
 // Request interceptor - attach auth token
 apiClient.interceptors.request.use(
-  (config) => {
-    const token = storage.getString('auth_token');
+  async (config) => {
+    const token = await storage.getString('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -32,20 +32,20 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
-      const refreshToken = storage.getString('refresh_token');
+      const refreshToken = await storage.getString('refresh_token');
       if (refreshToken) {
         try {
           const response = await axios.post(`${API_BASE_URL}/auth/mobile/refresh/`, {
             refresh: refreshToken,
           });
           const newToken = response.data.access;
-          storage.set('auth_token', newToken);
+          await storage.set('auth_token', newToken);
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
           return apiClient(originalRequest);
         } catch (refreshError) {
           // Refresh failed, clear tokens
-          storage.delete('auth_token');
-          storage.delete('refresh_token');
+          await storage.delete('auth_token');
+          await storage.delete('refresh_token');
         }
       }
     }

@@ -9,10 +9,10 @@ interface AuthStore {
   token: string | null;
   refreshToken: string | null;
   
-  setAuth: (user: User, token: string, refreshToken: string) => void;
+  setAuth: (user: User, token: string, refreshToken: string) => Promise<void>;
   setUser: (user: User) => void;
-  logout: () => void;
-  restoreSession: () => boolean;
+  logout: () => Promise<void>;
+  restoreSession: () => Promise<boolean>;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -23,9 +23,9 @@ export const useAuthStore = create<AuthStore>()(
       token: null,
       refreshToken: null,
 
-      setAuth: (user, token, refreshToken) => {
-        storage.set('auth_token', token);
-        storage.set('refresh_token', refreshToken);
+      setAuth: async (user, token, refreshToken) => {
+        await storage.set('auth_token', token);
+        await storage.set('refresh_token', refreshToken);
         set({ user, isAuthenticated: true, token, refreshToken });
       },
 
@@ -33,15 +33,15 @@ export const useAuthStore = create<AuthStore>()(
         set({ user });
       },
 
-      logout: () => {
-        storage.delete('auth_token');
-        storage.delete('refresh_token');
+      logout: async () => {
+        await storage.delete('auth_token');
+        await storage.delete('refresh_token');
         set({ user: null, isAuthenticated: false, token: null, refreshToken: null });
       },
 
-      restoreSession: () => {
-        const token = storage.getString('auth_token');
-        const refreshToken = storage.getString('refresh_token');
+      restoreSession: async () => {
+        const token = await storage.getString('auth_token');
+        const refreshToken = await storage.getString('refresh_token');
         if (token && refreshToken) {
           set({ isAuthenticated: true, token, refreshToken });
           return true;
