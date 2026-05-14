@@ -1,26 +1,49 @@
 import React from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Dimensions,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMeal } from '../../src/features/catalog/hooks/useMeals';
+import { reviewsApi, type MealReview } from '../../src/features/catalog/api/reviews.api';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
+import { cartApi } from '../../src/features/cart/api/cart.api';
+import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 import Loading from '../../src/shared/components/Loading';
-import Button from '../../src/shared/components/Button';
 
 const { width } = Dimensions.get('window');
 
 export default function MealDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: meal, isLoading } = useMeal(Number(id));
+  const mealId = Number(id);
+  const { data: meal, isLoading } = useMeal(mealId);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const addItem = useCartStore((s) => s.addItem);
+  const hydrateFromServer = useCartStore((s) => s.hydrateFromServer);
   const [qty, setQty] = React.useState(1);
+
+  const reviewsQuery = useQuery<MealReview[]>({
+    queryKey: ['reviews', 'meal', mealId],
+    queryFn: () => reviewsApi.forMeal(mealId),
+    enabled: Number.isFinite(mealId),
+    staleTime: 60 * 1000,
+  });
+
+  const addToServerCart = useMutation({
+    mutationFn: (variables: { mealItemId: number; quantity: number }) =>
+      cartApi.add(variables.mealItemId, variables.quantity),
+    onSuccess: (server) => {
+      hydrateFromServer(server);
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+  });
 
   if (isLoading || !meal) return <Loading fullScreen />;
 
@@ -86,6 +109,27 @@ export default function MealDetailScreen() {
               </View>
             ))}
           </View>
+
+          {/* Reviews */}
+          <Text style={styles.sectionTitle}>Reviews</Text>
+          {reviewsQuery.isLoading ? (
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: 12 }} />
+          ) : (reviewsQuery.data ?? []).length === 0 ? (
+            <Text style={styles.reviewEmpty}>No reviews yet — be the first after your order.</Text>
+          ) : (
+            (reviewsQuery.data ?? []).slice(0, 5).map((r) => (
+              <View key={r.id} style={styles.reviewCard}>
+                <View style={styles.reviewHeader}>
+                  <Text style={styles.reviewName}>{r.user_name || 'Customer'}</Text>
+                  <View style={styles.reviewStars}>
+                    <Ionicons name="star" size={12} color="#F5A623" />
+                    <Text style={styles.reviewRating}>{Number(r.rating).toFixed(1)}</Text>
+                  </View>
+                </View>
+                {r.comment ? <Text style={styles.reviewComment}>{r.comment}</Text> : null}
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
 
@@ -101,13 +145,30 @@ export default function MealDetailScreen() {
           </TouchableOpacity>
         </View>
         <TouchableOpacity
-          style={styles.addToCartBtn}
+          style={[styles.addToCartBtn, addToServerCart.isPending && { opacity: 0.7 }]}
+          disabled={addToServerCart.isPending}
           onPress={() => {
-            addItem({ id: String(meal.id), name: meal.name, price, image: meal.image || undefined, quantity: qty });
+            // Optimistic — Zustand update immediately for instant feel.
+            addItem({
+              id: String(meal.id),
+              name: meal.name,
+              price,
+              image: meal.image || undefined,
+              quantity: qty,
+            });
+            // Server sync — only when authenticated. If it fails, the cart-sync
+            // hook will reconcile on next login.
+            if (isAuthenticated) {
+              addToServerCart.mutate({ mealItemId: meal.id, quantity: qty });
+            }
             router.back();
           }}
         >
-          <Text style={styles.addToCartText}>Add to Cart · {formatPrice(price * qty)}</Text>
+          {addToServerCart.isPending ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.addToCartText}>Add to Cart · {formatPrice(price * qty)}</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -160,4 +221,23 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg, alignItems: 'center',
   },
   addToCartText: { ...typography.button.lg, color: '#fff' },
+
+  reviewEmpty: { ...typography.body.md, color: colors.text.muted, marginBottom: 120 },
+  reviewCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reviewName: { ...typography.body.md, color: colors.text.primary, fontWeight: '600' },
+  reviewStars: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  reviewRating: { ...typography.body.sm, color: colors.text.primary, fontWeight: '600' },
+  reviewComment: { ...typography.body.sm, color: colors.text.secondary, marginTop: 4, lineHeight: 18 },
 });

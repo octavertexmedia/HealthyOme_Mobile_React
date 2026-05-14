@@ -1,23 +1,62 @@
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
 import '../global.css';
-import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { QueryProvider } from '../src/providers/QueryProvider';
 import { colors } from '../src/shared/theme';
 import * as SplashScreen from 'expo-splash-screen';
+import { setAuthFailureHandler } from '../src/shared/api/client';
+import { useAuthStore } from '../src/features/auth/store/auth.store';
+import { registerPushToken } from '../src/features/notifications/registerPushToken';
+import { usePushDeepLink } from '../src/features/notifications/usePushDeepLink';
+import { useCartSync } from '../src/features/cart/hooks/useCartSync';
+import { initSentry } from '../src/shared/observability/sentry';
+
+initSentry();
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const router = useRouter();
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [ready, setReady] = useState(false);
+  usePushDeepLink();
+  useCartSync();
+
   useEffect(() => {
-    const prepare = async () => {
-      // Load fonts, restore auth, etc.
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await SplashScreen.hideAsync();
+    setAuthFailureHandler(() => {
+      router.replace('/(auth)/login' as any);
+    });
+  }, [router]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await restoreSession();
+      } finally {
+        if (mounted) {
+          setReady(true);
+          await SplashScreen.hideAsync();
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
     };
-    prepare();
-  }, []);
+  }, [restoreSession]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      registerPushToken().catch(() => {});
+    }
+  }, [isAuthenticated]);
+
+  if (!ready) return null;
 
   return (
     <QueryProvider>
@@ -35,6 +74,7 @@ export default function RootLayout() {
           <Stack.Screen name="meal/[id]" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="cart" options={{ headerShown: false }} />
           <Stack.Screen name="checkout" options={{ headerShown: false }} />
+          <Stack.Screen name="orders/my/[id]" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="subscription" options={{ headerShown: false }} />
           <Stack.Screen name="bowl-builder" options={{ headerShown: false }} />
           <Stack.Screen name="rewards" options={{ headerShown: false }} />

@@ -1,20 +1,31 @@
 import React from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Platform
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import { subscriptionApi } from '../../src/features/subscription/api/subscription.api';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuthStore();
 
-  const handleLogout = () => {
-    logout();
+  const activeSubsQuery = useQuery({
+    queryKey: ['subscriptions', 'active'],
+    queryFn: subscriptionApi.getActive,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activeSub = activeSubsQuery.data?.[0];
+
+  const handleLogout = async () => {
+    await logout();
     router.replace('/(auth)/login');
   };
 
@@ -77,28 +88,38 @@ export default function ProfileScreen() {
         contentContainerStyle={{ paddingBottom: 100 }}
       >
         {/* ACTIVE SUBSCRIPTION CARD */}
-        <View style={styles.subscriptionSection}>
-          <TouchableOpacity 
-            activeOpacity={0.9}
-            style={styles.subscriptionCardShadow}
-            onPress={() => router.push('/subscription')}
-          >
-            <LinearGradient
-              colors={['#2E8B1D', '#1E6F3E']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={styles.subscriptionCard}
+        {activeSub && (
+          <View style={styles.subscriptionSection}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.subscriptionCardShadow}
+              onPress={() => router.push('/subscription/active' as any)}
             >
-              <View style={styles.subHeader}>
-                <Text style={styles.subLabel}>ACTIVE SUBSCRIPTIONS</Text>
-                <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.9)" />
-              </View>
-              <View style={styles.subBody}>
-                <Text style={styles.subTitle}>Balanced Meal</Text>
-                <Text style={styles.subDesc}>16 deliveries left • Expires 9 Feb</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+              <LinearGradient
+                colors={['#2E8B1D', '#1E6F3E']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={styles.subscriptionCard}
+              >
+                <View style={styles.subHeader}>
+                  <Text style={styles.subLabel}>ACTIVE SUBSCRIPTION</Text>
+                  <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.9)" />
+                </View>
+                <View style={styles.subBody}>
+                  <Text style={styles.subTitle}>
+                    {typeof activeSub.meal_plan_type === 'object'
+                      ? activeSub.meal_plan_type?.name || 'Meal Plan'
+                      : 'Meal Plan'}
+                  </Text>
+                  <Text style={styles.subDesc}>
+                    {activeSub.deliveries_left != null ? `${activeSub.deliveries_left} deliveries left` : 'Active'}
+                    {activeSub.end_date ? ` • Ends ${new Date(activeSub.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}
+                    {activeSub.is_on_hold ? ' • On hold' : ''}
+                  </Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* SECTIONS */}
         {sections.map((section, sIdx) => (

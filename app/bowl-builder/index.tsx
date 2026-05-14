@@ -1,400 +1,659 @@
-import React, { useState } from 'react';
+import React, { useMemo, useRef, useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Dimensions,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { LinearGradient } from 'expo-linear-gradient';
 import { bowlApi } from '../../src/features/bowl/api/bowl.api';
 import { useBowlStore } from '../../src/features/bowl/store/bowl.store';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
-import DynamicBowl from '../../src/features/bowl/components/DynamicBowl';
+import { useAuthStore } from '../../src/features/auth/store/auth.store';
+
+type Tab = 'base' | 'veggie' | 'protein' | 'seeds' | 'dressing' | 'style';
+
+const TABS: { id: Tab; label: string; icon: any; required?: boolean }[] = [
+  { id: 'base', label: 'Base', icon: 'restaurant-outline', required: true },
+  { id: 'veggie', label: 'Veggies', icon: 'leaf-outline' },
+  { id: 'protein', label: 'Protein', icon: 'barbell-outline' },
+  { id: 'seeds', label: 'Toppings', icon: 'nutrition-outline' },
+  { id: 'dressing', label: 'Sauces', icon: 'water-outline' },
+  { id: 'style', label: 'Style', icon: 'flame-outline' },
+];
+
+const TYPE_MAP: Record<string, Tab> = {
+  vegetables: 'veggie',
+  veggie: 'veggie',
+  proteins: 'protein',
+  protein: 'protein',
+  seeds_nuts: 'seeds',
+  seeds: 'seeds',
+  dressing: 'dressing',
+  gravy: 'dressing',
+};
 
 const { width } = Dimensions.get('window');
+const CARD_W = (width - 20 * 2 - 12) / 2;
 
 export default function BowlBuilderScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  
-  const { 
-    base, ingredients, preparation, totalPrice, 
-    setBase, toggleIngredient, setPreparation, reset 
-  } = useBowlStore();
-  
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const addItem = useCartStore((s) => s.addItem);
+
+  const { base, ingredients, preparation, totalPrice, setBase, toggleIngredient, setPreparation, reset } =
+    useBowlStore();
+
   const [quantity, setQuantity] = useState(1);
+  const [activeTab, setActiveTab] = useState<Tab>('base');
+  const sectionRefs = useRef<Partial<Record<Tab, number>>>({});
+  const scrollRef = useRef<ScrollView | null>(null);
 
-  const { data: bases, isLoading: loadingBases } = useQuery({
-    queryKey: ['bowlBases'],
-    queryFn: bowlApi.getBases,
-  });
-
-  const { data: allIngredients, isLoading: loadingIngredients } = useQuery({
+  const basesQuery = useQuery({ queryKey: ['bowlBases'], queryFn: bowlApi.getBases });
+  const ingredientsQuery = useQuery({
     queryKey: ['bowlIngredients'],
     queryFn: () => bowlApi.getIngredients(),
   });
 
-  const loading = loadingBases || loadingIngredients;
+  const grouped = useMemo(() => {
+    const acc: Record<Tab, any[]> = {
+      base: [],
+      veggie: [],
+      protein: [],
+      seeds: [],
+      dressing: [],
+      style: [],
+    };
+    (ingredientsQuery.data ?? []).forEach((i: any) => {
+      const t = TYPE_MAP[i.ingredient_type] ?? 'seeds';
+      acc[t].push(i);
+    });
+    return acc;
+  }, [ingredientsQuery.data]);
 
-  const groupedIngredients: Record<string, any[]> = {
-    veggie: [],
-    protein: [],
-    seeds_nuts: [],
-    dressing: [],
-    gravy: [],
-  };
+  const selectedIds = useMemo(() => new Set(ingredients.map((i) => i.id)), [ingredients]);
 
-  (allIngredients || []).forEach((ing: any) => {
-    let type = ing.ingredient_type || 'extras';
-    if (type === 'vegetables' || type === 'veggie') type = 'veggie';
-    else if (type === 'proteins' || type === 'protein') type = 'protein';
-    else if (type === 'seeds_nuts' || type === 'seeds') type = 'seeds_nuts';
-    else if (type === 'dressing') type = 'dressing';
-    else if (type === 'gravy') type = 'gravy';
-    
-    if (!groupedIngredients[type]) groupedIngredients[type] = [];
-    groupedIngredients[type].push(ing);
+  const counts = useMemo(
+    () => ({
+      base: base ? 1 : 0,
+      veggie: ingredients.filter((i) => TYPE_MAP[i.ingredient_type] === 'veggie').length,
+      protein: ingredients.filter((i) => TYPE_MAP[i.ingredient_type] === 'protein').length,
+      seeds: ingredients.filter((i) => TYPE_MAP[i.ingredient_type] === 'seeds').length,
+      dressing: ingredients.filter((i) => TYPE_MAP[i.ingredient_type] === 'dressing').length,
+      style: 1,
+    }),
+    [base, ingredients]
+  );
+
+  const persistMutation = useMutation({
+    mutationFn: () =>
+      bowlApi.createBowl({
+        base_id: base!.id,
+        ingredient_ids: ingredients.map((i) => i.id),
+        preparation,
+      }),
   });
 
-  const handleAddToCart = () => {
-    if (!base) return;
-    
-    // Web app logic combines all extras strings
-    const bowlName = "Custom Bowl";
+  const onTabPress = useCallback((tab: Tab) => {
+    setActiveTab(tab);
+    const y = sectionRefs.current[tab];
+    if (typeof y === 'number' && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }
+  }, []);
+
+  const handleAddToCart = async () => {
+    if (!base) {
+      Alert.alert('Pick a base', 'Choose a base to start building your bowl.');
+      return;
+    }
+
+    let savedId: number | undefined;
+    if (isAuthenticated) {
+      try {
+        const saved = await persistMutation.mutateAsync();
+        savedId = saved?.id;
+      } catch {
+        // non-fatal — still add to local cart so user doesn't lose the bowl
+      }
+    }
+
+    const nameParts = [base.name, ...ingredients.slice(0, 3).map((i) => i.name)];
+    const bowlName =
+      `Custom Bowl: ${nameParts.join(', ')}` + (ingredients.length > 3 ? `…` : '');
+
     addItem({
-      id: `custom-bowl-${Date.now()}`,
+      id: `bowl-${savedId ?? Date.now()}`,
       name: bowlName,
       price: totalPrice,
       quantity,
-      meta: { 
+      meta: {
+        kind: 'custom-bowl',
+        savedId,
         base: base.name,
-        ingredients: ingredients.map(i => i.name),
+        baseId: base.id,
+        ingredientIds: ingredients.map((i) => i.id),
+        preparation,
       },
     });
-    
+
     reset();
     router.back();
   };
 
+  const loading = basesQuery.isLoading || ingredientsQuery.isLoading;
+
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={{ fontSize: 16, color: '#4B5563' }}>Loading bowl options...</Text>
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator color="#1E6F3E" />
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* ─── HEADER ─── */}
+      {/* ─── Header ─── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="chevron-back" size={24} color="#141414" />
+          <Ionicons name="chevron-back" size={22} color="#0B262F" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Make your bowl</Text>
-        <TouchableOpacity style={styles.headerHeartBtn}>
-          <Ionicons name="heart-outline" size={20} color="#111" />
+        <View style={{ alignItems: 'center' }}>
+          <Text style={styles.headerTitle}>Make your bowl</Text>
+          <Text style={styles.headerSub}>Build it your way</Text>
+        </View>
+        <TouchableOpacity onPress={reset} style={styles.headerBtn}>
+          <Ionicons name="refresh-outline" size={20} color="#0B262F" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* ─── DYNAMIC BOWL PREVIEW ─── */}
-        <View style={styles.previewContainer}>
-          <DynamicBowl base={base} ingredients={ingredients} />
+      {/* ─── Summary card ─── */}
+      <LinearGradient colors={['#1E6F3E', '#0F3D21']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summary}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.summaryLabel}>Your bowl</Text>
+          <Text style={styles.summaryTitle} numberOfLines={1}>
+            {base ? base.name : 'Pick a base'}
+          </Text>
+          <Text style={styles.summaryMeta}>
+            {ingredients.length} ingredient{ingredients.length === 1 ? '' : 's'} • {preparation === 'warm' ? 'Warm' : 'Cold'}
+          </Text>
         </View>
+        <View style={styles.summaryPriceBox}>
+          <Text style={styles.summaryPriceLabel}>Total</Text>
+          <Text style={styles.summaryPrice}>₹{totalPrice}</Text>
+        </View>
+      </LinearGradient>
 
-        {/* ─── OPTIONS ─── */}
-        <View style={styles.optionsWrap}>
-          <View style={styles.chooseTitleWrap}>
-            <Text style={styles.chooseTitle}>Choose your items</Text>
+      {/* ─── Tab strip ─── */}
+      <View style={styles.tabsWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabs}
+        >
+          {TABS.map((t) => {
+            const active = activeTab === t.id;
+            const count = counts[t.id];
+            return (
+              <TouchableOpacity
+                key={t.id}
+                style={[styles.tab, active && styles.tabActive]}
+                onPress={() => onTabPress(t.id)}
+              >
+                <Ionicons name={t.icon} size={14} color={active ? '#fff' : '#0B262F'} />
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{t.label}</Text>
+                {count > 0 && (
+                  <View style={[styles.tabBadge, active && styles.tabBadgeActive]}>
+                    <Text style={[styles.tabBadgeText, active && { color: '#1E6F3E' }]}>{count}</Text>
+                  </View>
+                )}
+                {t.required && !count && (
+                  <View style={styles.tabDot} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* ─── Sections ─── */}
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 160, paddingTop: 8 }}
+        scrollEventThrottle={16}
+      >
+        <Section
+          id="base"
+          title="Pick your base"
+          required
+          subtitle="The foundation of your bowl"
+          onLayoutY={(y) => (sectionRefs.current.base = y)}
+        >
+          <Grid
+            items={basesQuery.data ?? []}
+            selectedIds={base ? new Set([base.id]) : new Set()}
+            onPick={(b) => setBase(b)}
+            single
+          />
+        </Section>
+
+        <Section
+          id="veggie"
+          title="Veggies"
+          subtitle="Fresh & crunchy add-ons"
+          onLayoutY={(y) => (sectionRefs.current.veggie = y)}
+        >
+          <Grid items={grouped.veggie} selectedIds={selectedIds} onPick={toggleIngredient} />
+        </Section>
+
+        <Section
+          id="protein"
+          title="Protein"
+          subtitle="Pick what fuels you"
+          onLayoutY={(y) => (sectionRefs.current.protein = y)}
+        >
+          <Grid items={grouped.protein} selectedIds={selectedIds} onPick={toggleIngredient} />
+        </Section>
+
+        {grouped.seeds.length > 0 && (
+          <Section
+            id="seeds"
+            title="Toppings"
+            subtitle="Seeds, nuts, crunch"
+            onLayoutY={(y) => (sectionRefs.current.seeds = y)}
+          >
+            <Grid items={grouped.seeds} selectedIds={selectedIds} onPick={toggleIngredient} />
+          </Section>
+        )}
+
+        {grouped.dressing.length > 0 && (
+          <Section
+            id="dressing"
+            title="Sauces & dressings"
+            subtitle="Tie it all together"
+            onLayoutY={(y) => (sectionRefs.current.dressing = y)}
+          >
+            <Grid items={grouped.dressing} selectedIds={selectedIds} onPick={toggleIngredient} />
+          </Section>
+        )}
+
+        <Section
+          id="style"
+          title="Style"
+          subtitle="How would you like it served?"
+          onLayoutY={(y) => (sectionRefs.current.style = y)}
+        >
+          <View style={styles.styleRow}>
+            <TouchableOpacity
+              style={[styles.styleChip, preparation === 'warm' && styles.styleChipActive]}
+              onPress={() => setPreparation('warm')}
+            >
+              <Ionicons
+                name="flame"
+                size={18}
+                color={preparation === 'warm' ? '#fff' : '#0B262F'}
+              />
+              <Text
+                style={[styles.styleText, preparation === 'warm' && styles.styleTextActive]}
+              >
+                Warm
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.styleChip, preparation === 'cold' && styles.styleChipActive]}
+              onPress={() => setPreparation('cold')}
+            >
+              <Ionicons
+                name="snow"
+                size={18}
+                color={preparation === 'cold' ? '#fff' : '#0B262F'}
+              />
+              <Text
+                style={[styles.styleText, preparation === 'cold' && styles.styleTextActive]}
+              >
+                Cold
+              </Text>
+            </TouchableOpacity>
           </View>
-          
-          {/* Base */}
-          <BowlSection 
-            title="Base" 
-            required 
-            single
-            options={(bases || []).map((b: any) => ({ ...b, label: b.name, icon_type: 'veg' }))} 
-            selected={base ? [base.id] : []}
-            onSelect={(id: string) => {
-              const b = bases?.find((x: any) => x.id === id);
-              if(b) setBase(b);
-            }}
-          />
-
-          {/* Veggies */}
-          <BowlSection 
-            title="Veggies" 
-            options={(groupedIngredients['veggie'] || []).map(i => ({ ...i, label: i.name }))} 
-            selected={ingredients.map(i => i.id)}
-            onSelect={(id: string) => {
-              const item = groupedIngredients['veggie']?.find(x => x.id === id);
-              if(item) toggleIngredient(item);
-            }}
-          />
-
-          {/* Protein */}
-          <BowlSection 
-            title="Protein" 
-            options={(groupedIngredients['protein'] || []).map(i => ({ ...i, label: i.name }))} 
-            selected={ingredients.map(i => i.id)}
-            onSelect={(id: string) => {
-              const item = groupedIngredients['protein']?.find(x => x.id === id);
-              if(item) toggleIngredient(item);
-            }}
-          />
-
-          {/* Seeds & Nuts */}
-          <BowlSection 
-            title="Seeds & Nuts" 
-            options={(groupedIngredients['seeds_nuts'] || []).map(i => ({ ...i, label: i.name }))} 
-            selected={ingredients.map(i => i.id)}
-            onSelect={(id: string) => {
-              const item = groupedIngredients['seeds_nuts']?.find(x => x.id === id);
-              if(item) toggleIngredient(item);
-            }}
-          />
-
-          {/* Dressings (Sauces / Dips) */}
-          {groupedIngredients['dressing'] && groupedIngredients['dressing'].length > 0 && (
-            <BowlSection 
-              title="Sauces & Dips" 
-              options={groupedIngredients['dressing'].map(i => ({ ...i, label: i.name }))} 
-              selected={ingredients.map(i => i.id)}
-              onSelect={(id: string) => {
-                const item = groupedIngredients['dressing']?.find(x => x.id === id);
-                if(item) toggleIngredient(item);
-              }}
-            />
-          )}
-
-          {/* Gravy */}
-          {groupedIngredients['gravy'] && groupedIngredients['gravy'].length > 0 && (
-            <BowlSection 
-              title="Gravy (applicable on rice only)" 
-              options={groupedIngredients['gravy'].map(i => ({ ...i, label: i.name }))} 
-              selected={ingredients.map(i => i.id)}
-              onSelect={(id: string) => {
-                const item = groupedIngredients['gravy']?.find(x => x.id === id);
-                if(item) toggleIngredient(item);
-              }}
-            />
-          )}
-
-          {/* Preparation */}
-          <BowlSection 
-            title={`Preparation: (Warm/Cold): ${preparation.charAt(0).toUpperCase() + preparation.slice(1)}`} 
-            single
-            options={[
-              { id: 'warm', label: 'Warm', price: 0, icon_type: 'none' },
-              { id: 'cold', label: 'Cold', price: 0, icon_type: 'none' }
-            ]}
-            selected={[preparation]}
-            onSelect={(id: string) => setPreparation(id as 'warm' | 'cold')}
-          />
-
-        </View>
+        </Section>
       </ScrollView>
 
-      {/* ─── FOOTER ─── */}
+      {/* ─── Footer ─── */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <View style={styles.qtyControls}>
-          <TouchableOpacity 
-            style={styles.qtyBtn} 
+        <View style={styles.qty}>
+          <TouchableOpacity
             onPress={() => setQuantity(Math.max(1, quantity - 1))}
+            style={styles.qtyBtn}
           >
-            <Text style={styles.qtyBtnText}>−</Text>
+            <Ionicons name="remove" size={18} color="#0B262F" />
           </TouchableOpacity>
           <Text style={styles.qtyText}>{quantity}</Text>
-          <TouchableOpacity 
-            style={styles.qtyBtnPlus} 
+          <TouchableOpacity
             onPress={() => setQuantity(quantity + 1)}
+            style={styles.qtyBtn}
           >
-            <Text style={styles.qtyBtnPlusText}>+</Text>
+            <Ionicons name="add" size={18} color="#0B262F" />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
-          style={[styles.addBtn, !base && styles.addBtnDisabled]}
+        <TouchableOpacity
+          style={[styles.addBtn, (!base || persistMutation.isPending) && styles.addBtnDisabled]}
           onPress={handleAddToCart}
-          disabled={!base}
+          disabled={!base || persistMutation.isPending}
           activeOpacity={0.9}
         >
-          <Text style={styles.addBtnText}>Add ₹{totalPrice * quantity}</Text>
+          {persistMutation.isPending ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Text style={styles.addBtnText}>
+                {base ? 'Add to cart' : 'Pick a base'}
+              </Text>
+              {base && <Text style={styles.addBtnPrice}>₹{totalPrice * quantity}</Text>}
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-/* ─── HELPER COMPONENTS ─── */
+/* ───────────────────────── helpers ───────────────────────── */
 
-function BowlSection({ title, required, options, selected, onSelect, single }: any) {
+function Section({
+  id,
+  title,
+  subtitle,
+  required,
+  children,
+  onLayoutY,
+}: {
+  id: string;
+  title: string;
+  subtitle?: string;
+  required?: boolean;
+  children: React.ReactNode;
+  onLayoutY?: (y: number) => void;
+}) {
   return (
-    <View style={styles.sectionContainer}>
-      {/* Header */}
+    <View
+      style={styles.section}
+      onLayout={(e) => onLayoutY?.(e.nativeEvent.layout.y)}
+    >
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {required ? (
-          <View style={styles.badgeRequired}>
-            <Text style={styles.badgeRequiredText}>*Required</Text>
+        <View style={{ flex: 1 }}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            {required && (
+              <View style={styles.requiredPill}>
+                <Text style={styles.requiredText}>Required</Text>
+              </View>
+            )}
           </View>
-        ) : (
-          <Text style={styles.badgeOptional}>Optional</Text>
-        )}
+          {subtitle ? <Text style={styles.sectionSub}>{subtitle}</Text> : null}
+        </View>
       </View>
+      {children}
+    </View>
+  );
+}
 
-      {/* Options */}
-      <View style={styles.optionsList}>
-        {options.map((opt: any) => {
-          const active = selected.includes(opt.id);
-          const price = opt.price || 0;
-
-          // Determine indicator color based on icon_type
-          let indicatorColor = '#08B853'; // default veg
-          if (opt.icon_type === 'non_veg') indicatorColor = '#D93616';
-          if (opt.icon_type === 'egg') indicatorColor = '#E2BE24';
-
-          const showIndicator = opt.icon_type && opt.icon_type !== 'none';
-
-          return (
-            <TouchableOpacity 
-              key={opt.id} 
-              style={styles.optionRow}
-              activeOpacity={0.7}
-              onPress={() => onSelect(opt.id)}
-            >
-              <View style={styles.optionLeft}>
-                {showIndicator && (
-                   <View style={[styles.vegIndicator, { borderColor: indicatorColor }]}>
-                     <View style={[styles.vegDot, { backgroundColor: indicatorColor }]} />
-                   </View>
-                )}
-                <Text style={styles.optionLabel}>
-                  {opt.label}
-                </Text>
+function Grid({
+  items,
+  selectedIds,
+  onPick,
+  single,
+}: {
+  items: any[];
+  selectedIds: Set<number>;
+  onPick: (item: any) => void;
+  single?: boolean;
+}) {
+  if (items.length === 0) {
+    return <Text style={styles.emptyText}>No options available right now.</Text>;
+  }
+  return (
+    <View style={styles.grid}>
+      {items.map((it) => {
+        const active = selectedIds.has(it.id);
+        const indicatorColor =
+          it.icon_type === 'non_veg' ? '#D93616' : it.icon_type === 'egg' ? '#E2BE24' : '#08B853';
+        return (
+          <TouchableOpacity
+            key={it.id}
+            style={[styles.card, active && styles.cardActive]}
+            activeOpacity={0.85}
+            onPress={() => onPick(it)}
+          >
+            {it.image ? (
+              <Image source={{ uri: it.image }} style={styles.cardImg} />
+            ) : (
+              <View style={[styles.cardImg, styles.cardImgFallback]}>
+                <Ionicons name="leaf" size={26} color="#1E6F3E" />
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Text style={styles.optionPrice}>₹ {price}</Text>
-
-                {single ? (
-                  /* Radio button */
-                  <View style={[styles.radioOutline, active && styles.radioOutlineActive]}>
-                    {active && <View style={styles.radioDot} />}
-                  </View>
-                ) : (
-                  /* Checkbox */
-                  <View style={[styles.checkboxOutline, active && styles.checkboxOutlineActive]}>
-                    {active && <Ionicons name="checkmark" size={14} color="#fff" />}
-                  </View>
-                )}
+            )}
+            {it.icon_type && it.icon_type !== 'none' && (
+              <View style={[styles.vegIndicator, { borderColor: indicatorColor }]}>
+                <View style={[styles.vegDot, { backgroundColor: indicatorColor }]} />
               </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+            )}
+            {active && (
+              <View style={styles.cardCheck}>
+                <Ionicons name="checkmark" size={14} color="#fff" />
+              </View>
+            )}
+            <View style={styles.cardBody}>
+              <Text style={styles.cardName} numberOfLines={2}>
+                {it.name}
+              </Text>
+              <Text style={styles.cardPrice}>
+                {it.price > 0 ? `+ ₹${it.price}` : single ? `₹${it.price}` : 'Free'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FDE6C6' },
-  
-  /* Header */
+  container: { flex: 1, backgroundColor: '#F7FBF4' },
+  center: { justifyContent: 'center', alignItems: 'center' },
+
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F7FBF4',
   },
-  headerBtn: { padding: 4 },
-  headerTitle: { fontSize: 20, fontWeight: '600', color: '#141414' },
-  headerHeartBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff',
-    justifyContent: 'center', alignItems: 'center',
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#0B262F' },
+  headerSub: { fontSize: 11, color: '#6B7280' },
 
-  /* Preview */
-  previewContainer: {
-    width: '100%', height: 260, justifyContent: 'center', alignItems: 'center',
-    marginBottom: 0, marginTop: 6,
+  summary: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
+  summaryLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600', letterSpacing: 0.4, textTransform: 'uppercase' },
+  summaryTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 2 },
+  summaryMeta: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
+  summaryPriceBox: { alignItems: 'flex-end' },
+  summaryPriceLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
+  summaryPrice: { color: '#fff', fontSize: 22, fontWeight: '800', marginTop: 2 },
 
-  /* Options Wrapper */
-  optionsWrap: {
-    backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16,
-    minHeight: 500, paddingTop: 16,
+  tabsWrap: {
+    backgroundColor: '#F7FBF4',
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  chooseTitleWrap: {
-    paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6'
+  tabs: { paddingHorizontal: 16, gap: 8 },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  chooseTitle: {
-    fontSize: 16, fontWeight: '600', color: '#0B262F'
+  tabActive: { backgroundColor: '#1E6F3E', borderColor: '#1E6F3E' },
+  tabText: { fontSize: 13, color: '#0B262F', fontWeight: '600' },
+  tabTextActive: { color: '#fff' },
+  tabBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#0B262F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
+  tabBadgeActive: { backgroundColor: '#fff' },
+  tabBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  tabDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#C7463A' },
 
-  /* Section */
-  sectionContainer: {
-    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+  section: {
+    marginTop: 16,
+    paddingHorizontal: 16,
   },
-  sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
+  sectionHeader: { marginBottom: 12 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#0B262F' },
+  sectionSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  requiredPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: '#FEE2E2' },
+  requiredText: { fontSize: 10, fontWeight: '700', color: '#C7463A' },
+
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#111' },
-  badgeRequired: {
-    backgroundColor: '#FCE9E5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+  card: {
+    width: CARD_W,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    position: 'relative',
   },
-  badgeRequiredText: { fontSize: 12, fontWeight: '500', color: '#C7463A' },
-  badgeOptional: { fontSize: 12, color: '#6C6C6C' },
-  
-  optionsList: { gap: 16 },
-  optionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  optionLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  
+  cardActive: { borderColor: '#1E6F3E' },
+  cardImg: { width: '100%', height: 88, backgroundColor: '#F1F5F1' },
+  cardImgFallback: { justifyContent: 'center', alignItems: 'center' },
+  cardBody: { padding: 10, gap: 4 },
+  cardName: { fontSize: 13, fontWeight: '600', color: '#0B262F' },
+  cardPrice: { fontSize: 12, color: '#1E6F3E', fontWeight: '600' },
+  cardCheck: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#1E6F3E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   vegIndicator: {
-    width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: '#08B853',
-    justifyContent: 'center', alignItems: 'center',
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    width: 16,
+    height: 16,
+    borderRadius: 3,
+    borderWidth: 1,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  vegDot: {
-    width: 10, height: 10, borderRadius: 5, backgroundColor: '#08B853',
-  },
+  vegDot: { width: 8, height: 8, borderRadius: 4 },
 
-  optionLabel: { fontSize: 14, color: '#111', fontWeight: '500' },
-  optionPrice: { fontSize: 14, color: '#0B262F' },
-
-  radioOutline: {
-    width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: '#D1D5DB',
-    justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff'
+  styleRow: { flexDirection: 'row', gap: 12 },
+  styleChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  radioOutlineActive: { borderColor: '#4B8E3D' },
-  radioDot: {
-    width: 10, height: 10, borderRadius: 5, backgroundColor: '#4B8E3D',
-  },
+  styleChipActive: { backgroundColor: '#1E6F3E', borderColor: '#1E6F3E' },
+  styleText: { fontSize: 14, fontWeight: '700', color: '#0B262F' },
+  styleTextActive: { color: '#fff' },
 
-  checkboxOutline: {
-    width: 20, height: 20, borderRadius: 4, borderWidth: 1.5, borderColor: '#D5D8D7',
-    justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff'
-  },
-  checkboxOutlineActive: { backgroundColor: '#2C921D', borderColor: '#2C921D' },
+  emptyText: { fontSize: 13, color: '#6B7280', padding: 8 },
 
-  /* Footer */
   footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB',
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, gap: 16,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -4 },
   },
-  qtyControls: {
-    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#098323',
-    borderRadius: 999, overflow: 'hidden', height: 48,
+  qty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F1',
+    borderRadius: 999,
+    paddingHorizontal: 4,
+    height: 48,
   },
-  qtyBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  qtyBtnText: { fontSize: 18, color: '#111' },
-  qtyBtnPlus: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  qtyBtnPlusText: { fontSize: 18, color: '#4B8E3D' },
-  qtyText: { width: 28, textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#111' },
-  
+  qtyBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  qtyText: { width: 28, textAlign: 'center', fontSize: 15, fontWeight: '700', color: '#0B262F' },
+
   addBtn: {
-    flex: 1, height: 48, borderRadius: 999, backgroundColor: '#2C921D',
-    justifyContent: 'center', alignItems: 'center',
+    flex: 1,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: '#1E6F3E',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
   },
-  addBtnDisabled: { backgroundColor: '#D1D5DB' },
-  addBtnText: { color: '#fff', fontSize: 16, fontWeight: '500' },
+  addBtnDisabled: { backgroundColor: '#9CA3AF' },
+  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  addBtnPrice: { color: '#fff', fontWeight: '800', fontSize: 15 },
 });

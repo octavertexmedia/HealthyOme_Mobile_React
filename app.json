@@ -57,7 +57,9 @@
       },
       "eas": {
         "projectId": "healthyome-mobile"
-      }
+      },
+      "apiUrl": "https://dev.healthyome.com/api/shop",
+      "appEnv": "development"
     }
   }
 }

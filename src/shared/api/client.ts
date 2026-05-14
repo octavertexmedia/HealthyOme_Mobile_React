@@ -1,7 +1,12 @@
-import axios from 'axios';
-import { storage } from '../storage/mmkv';
+import axios, {
+  AxiosError,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from 'axios';
+import { env } from '../config/env';
+import { tokenStore } from '../storage/tokens';
 
-const API_BASE_URL = 'https://dev.healthyome.com/api/shop';
+const API_BASE_URL = env.apiUrl;
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -11,10 +16,9 @@ const apiClient = axios.create({
   },
 });
 
-// Request interceptor - attach auth token
 apiClient.interceptors.request.use(
   async (config) => {
-    const token = await storage.getString('auth_token');
+    const token = await tokenStore.getAccess();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -23,34 +27,66 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor - handle 401 / token refresh
+type RetriableConfig = InternalAxiosRequestConfig & { _retry?: boolean };
+
+let refreshPromise: Promise<string | null> | null = null;
+let onAuthFailure: (() => void) | null = null;
+
+export function setAuthFailureHandler(fn: () => void) {
+  onAuthFailure = fn;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refresh = await tokenStore.getRefresh();
+  if (!refresh) return null;
+  try {
+    const res = await axios.post(
+      `${API_BASE_URL}/auth/mobile/refresh/`,
+      { refresh },
+      { timeout: 15000 }
+    );
+    const newAccess: string | undefined = res.data?.access;
+    const newRefresh: string | undefined = res.data?.refresh;
+    if (!newAccess) return null;
+    if (newRefresh) {
+      await tokenStore.setPair(newAccess, newRefresh);
+    } else {
+      await tokenStore.setAccess(newAccess);
+    }
+    return newAccess;
+  } catch {
+    return null;
+  }
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      
-      const refreshToken = await storage.getString('refresh_token');
-      if (refreshToken) {
-        try {
-          const response = await axios.post(`${API_BASE_URL}/auth/mobile/refresh/`, {
-            refresh: refreshToken,
-          });
-          const newToken = response.data.access;
-          await storage.set('auth_token', newToken);
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
-          return apiClient(originalRequest);
-        } catch (refreshError) {
-          // Refresh failed, clear tokens
-          await storage.delete('auth_token');
-          await storage.delete('refresh_token');
-        }
-      }
+  async (error: AxiosError) => {
+    const original = error.config as RetriableConfig | undefined;
+    const status = error.response?.status;
+
+    if (!original || status !== 401 || original._retry) {
+      return Promise.reject(error);
     }
-    
-    return Promise.reject(error);
+
+    original._retry = true;
+
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken().finally(() => {
+        refreshPromise = null;
+      });
+    }
+
+    const newToken = await refreshPromise;
+
+    if (!newToken) {
+      await tokenStore.clear();
+      onAuthFailure?.();
+      return Promise.reject(error);
+    }
+
+    original.headers.Authorization = `Bearer ${newToken}`;
+    return apiClient(original as AxiosRequestConfig);
   }
 );
 

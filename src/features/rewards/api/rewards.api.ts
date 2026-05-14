@@ -1,26 +1,56 @@
 import apiClient from '../../../shared/api/client';
 
+export interface Reward {
+  id: number;
+  name: string;
+  description?: string;
+  reward_type: string;
+  points_required: number;
+  discount_percentage?: number;
+  discount_amount?: number | string;
+  cashback_amount?: number | string;
+  is_active: boolean;
+}
+
+export interface RewardTransaction {
+  id: number;
+  transaction_type: 'earned' | 'redeemed' | 'expired' | 'bonus';
+  points: number;
+  description: string;
+  created_at: string;
+}
+
 export const rewardsApi = {
-  getRewards: async () => {
-    const response = await apiClient.get('/rewards/');
-    if (Array.isArray(response.data)) return response.data;
-    return response.data.results || [];
+  // Public reward catalog (ViewSet)
+  getRewards: async (): Promise<Reward[]> => {
+    const { data } = await apiClient.get('/rewards/');
+    if (Array.isArray(data)) return data;
+    return data?.results ?? [];
   },
 
-  getMyRewards: async () => {
-    const response = await apiClient.get('/rewards/my/');
-    return response.data;
+  // Claimable rewards for the authenticated user
+  getAvailable: async (): Promise<Reward[]> => {
+    const { data } = await apiClient.get('/rewards/available/');
+    if (Array.isArray(data)) return data;
+    return data?.results ?? [];
+  },
+
+  // Earned/spent transaction log
+  getHistory: async (): Promise<RewardTransaction[]> => {
+    const { data } = await apiClient.get('/rewards/history/');
+    if (Array.isArray(data)) return data;
+    return data?.results ?? [];
   },
 
   claimReward: async (rewardId: number) => {
-    const response = await apiClient.post('/rewards/claim/', { reward_id: rewardId });
-    return response.data;
+    const { data } = await apiClient.post(`/rewards/${rewardId}/claim/`);
+    return data;
   },
 
-  getUserPoints: async () => {
+  getUserPoints: async (): Promise<number> => {
     try {
-      const response = await apiClient.get('/rewards/points/');
-      return response.data?.points || response.data?.total_points || 0;
+      const { data } = await apiClient.get('/rewards/points/');
+      return data?.points ?? data?.total_points ?? 0;
     } catch {
       return 0;
     }

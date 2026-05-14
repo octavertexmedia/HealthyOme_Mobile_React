@@ -29,10 +29,14 @@ export const truncateText = (text: string, maxLength: number): string => {
   return text.substring(0, maxLength) + '...';
 };
 
+import { env } from '../config/env';
+
 export const getImageUrl = (path: string | null | undefined): string | undefined => {
   if (!path) return undefined;
   if (path.startsWith('http')) return path;
-  return `https://dev.healthyome.com${path}`;
+  // strip trailing /api or /api/shop from apiUrl to get the bare origin
+  const origin = env.apiUrl.replace(/\/api(\/shop)?\/?$/, '');
+  return `${origin}${path.startsWith('/') ? '' : '/'}${path}`;
 };
 
 export const validatePhone = (phone: string): boolean => {

@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { zustandMMKVStorage, storage } from '../../../shared/storage/mmkv';
+import { zustandMMKVStorage } from '../../../shared/storage/mmkv';
+import { tokenStore } from '../../../shared/storage/tokens';
+import { authApi } from '../api/auth.api';
+import { unregisterPushToken } from '../../notifications/registerPushToken';
 import type { User } from '../types/auth.types';
 
 interface AuthStore {
@@ -8,7 +11,7 @@ interface AuthStore {
   isAuthenticated: boolean;
   token: string | null;
   refreshToken: string | null;
-  
+
   setAuth: (user: User, token: string, refreshToken: string) => Promise<void>;
   setUser: (user: User) => void;
   logout: () => Promise<void>;
@@ -17,15 +20,14 @@ interface AuthStore {
 
 export const useAuthStore = create<AuthStore>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       isAuthenticated: false,
       token: null,
       refreshToken: null,
 
       setAuth: async (user, token, refreshToken) => {
-        await storage.set('auth_token', token);
-        await storage.set('refresh_token', refreshToken);
+        await tokenStore.setPair(token, refreshToken);
         set({ user, isAuthenticated: true, token, refreshToken });
       },
 
@@ -34,14 +36,22 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: async () => {
-        await storage.delete('auth_token');
-        await storage.delete('refresh_token');
+        await unregisterPushToken();
+        const refresh = await tokenStore.getRefresh();
+        if (refresh) {
+          try {
+            await authApi.logout(refresh);
+          } catch {
+            // best effort — blacklist may fail if token already expired; clear locally regardless
+          }
+        }
+        await tokenStore.clear();
         set({ user: null, isAuthenticated: false, token: null, refreshToken: null });
       },
 
       restoreSession: async () => {
-        const token = await storage.getString('auth_token');
-        const refreshToken = await storage.getString('refresh_token');
+        const token = await tokenStore.getAccess();
+        const refreshToken = await tokenStore.getRefresh();
         if (token && refreshToken) {
           set({ isAuthenticated: true, token, refreshToken });
           return true;

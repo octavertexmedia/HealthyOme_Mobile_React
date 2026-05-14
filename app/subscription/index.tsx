@@ -1,73 +1,116 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
-import apiClient from '../../src/shared/api/client';
+import { subscriptionApi, type ActiveSubscription } from '../../src/features/subscription/api/subscription.api';
 
-// ─── Types ───────────────────────────────
-type ActiveSub = {
-  id: number;
-  meal_plan_type: { name: string };
-  subscription_period: { name: string };
-  category: { name: string };
-  deliveries_left: number;
-  total_deliveries: number;
-  status: string;
-};
+function pickName(field: any, fallback = ''): string {
+  if (!field) return fallback;
+  if (typeof field === 'string') return field;
+  if (typeof field === 'object') return field.name ?? fallback;
+  return fallback;
+}
 
-function SubCard({ sub }: { sub: ActiveSub }) {
-  const pct = Math.round((sub.deliveries_left / sub.total_deliveries) * 100);
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardTop}>
-        <View>
-          <Text style={styles.cardTitle}>{sub.meal_plan_type?.name || 'Subscription'}</Text>
-          <Text style={styles.cardSub}>
-            {sub.subscription_period?.name} | {sub.category?.name}
-          </Text>
-        </View>
-        {sub.status && sub.status !== 'Active' && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>{sub.status}</Text>
-          </View>
-        )}
-      </View>
+function formatDate(iso?: string | null): string {
+  if (!iso) return '';
+  try {
+    return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+    });
+  } catch {
+    return iso;
+  }
+}
 
-      {/* Progress Bar */}
-      <View style={styles.progressWrap}>
-        <View style={[styles.progressBar, { width: `${pct}%` as any }]} />
-      </View>
-      <Text style={styles.progressLabel}>
-        {sub.deliveries_left} of {sub.total_deliveries} deliveries left
-      </Text>
-    </View>
-  );
+function todayPlus(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 export default function SubscriptionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const { data: subs, isLoading } = useQuery({
+  const activeQuery = useQuery<ActiveSubscription[]>({
     queryKey: ['subscriptions', 'active'],
-    queryFn: async () => {
-      const res = await apiClient.get('/subscriptions/my/');
-      return res.data as ActiveSub[];
-    },
+    queryFn: subscriptionApi.getActive,
     enabled: isAuthenticated,
   });
 
-  const subscriptions = subs || [];
+  const subscriptions = (activeQuery.data ?? []).filter((s) => s.is_active);
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+
+  const pauseMutation = useMutation({
+    mutationFn: (vars: { id: number; hold_start_date: string; hold_end_date: string }) =>
+      subscriptionApi.pause(vars.id, {
+        hold_start_date: vars.hold_start_date,
+        hold_end_date: vars.hold_end_date,
+      }),
+    onSuccess: invalidate,
+    onError: (e: any) =>
+      Alert.alert('Could not pause', e?.response?.data?.error || 'Try again later.'),
+  });
+
+  const resumeMutation = useMutation({
+    mutationFn: (id: number) => subscriptionApi.resume(id),
+    onSuccess: invalidate,
+    onError: (e: any) =>
+      Alert.alert('Could not resume', e?.response?.data?.error || 'Try again later.'),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: number) => subscriptionApi.cancel(id),
+    onSuccess: invalidate,
+    onError: (e: any) =>
+      Alert.alert('Could not cancel', e?.response?.data?.error || 'Try again later.'),
+  });
+
+  const askPause = (sub: ActiveSubscription) => {
+    Alert.alert(
+      'Pause subscription',
+      'Pause deliveries for 7 days starting tomorrow? Your remaining deliveries roll over.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Pause 7 days',
+          onPress: () =>
+            pauseMutation.mutate({
+              id: sub.id,
+              hold_start_date: todayPlus(1),
+              hold_end_date: todayPlus(7),
+            }),
+        },
+      ]
+    );
+  };
+
+  const askCancel = (sub: ActiveSubscription) => {
+    Alert.alert(
+      'Cancel subscription?',
+      'You will stop receiving deliveries. This cannot be undone.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel subscription',
+          style: 'destructive',
+          onPress: () => cancelMutation.mutate(sub.id),
+        },
+      ]
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Dark green background header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
           <Ionicons name="close" size={24} color="#fff" />
@@ -75,31 +118,125 @@ export default function SubscriptionScreen() {
 
         <View style={styles.headerTextWrap}>
           <Text style={styles.headerCount}>{subscriptions.length}</Text>
-          <Text style={styles.headerLabel}>Active subscriptions</Text>
+          <Text style={styles.headerLabel}>Active subscription{subscriptions.length === 1 ? '' : 's'}</Text>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {isLoading ? (
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={activeQuery.isFetching && !activeQuery.isLoading}
+            onRefresh={() => activeQuery.refetch()}
+            tintColor="#fff"
+          />
+        }
+      >
+        {!isAuthenticated ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>Sign in to view your subscriptions</Text>
+            <TouchableOpacity
+              style={styles.browsePlansBtn}
+              onPress={() => router.push('/(auth)/login' as any)}
+            >
+              <Text style={styles.browsePlansBtnText}>Sign in</Text>
+            </TouchableOpacity>
+          </View>
+        ) : activeQuery.isLoading ? (
           <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />
         ) : subscriptions.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>No active subscriptions</Text>
-            <TouchableOpacity style={styles.browsePlansBtn} onPress={() => router.push('/subscription/plans')}>
-              <Text style={styles.browsePlansBtnText}>Browse Plans</Text>
+            <TouchableOpacity
+              style={styles.browsePlansBtn}
+              onPress={() => router.push('/subscription/plans' as any)}
+            >
+              <Text style={styles.browsePlansBtnText}>Browse plans</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          subscriptions.map((sub) => <SubCard key={sub.id} sub={sub} />)
+          subscriptions.map((sub) => {
+            const planName = pickName(sub.meal_plan_type, 'Subscription');
+            const periodName = pickName(sub.subscription_period);
+            const pendingThis =
+              (pauseMutation.isPending && pauseMutation.variables?.id === sub.id) ||
+              (resumeMutation.isPending && resumeMutation.variables === sub.id) ||
+              (cancelMutation.isPending && cancelMutation.variables === sub.id);
+
+            return (
+              <View key={sub.id} style={styles.card}>
+                <View style={styles.cardTop}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>{planName}</Text>
+                    <Text style={styles.cardSub}>
+                      {periodName ? `${periodName}` : ''}
+                      {sub.start_date ? `${periodName ? ' · ' : ''}from ${formatDate(sub.start_date)}` : ''}
+                    </Text>
+                  </View>
+                  {sub.is_on_hold && (
+                    <View style={styles.holdBadge}>
+                      <Text style={styles.holdBadgeText}>On hold</Text>
+                    </View>
+                  )}
+                </View>
+
+                {sub.is_on_hold && (sub.hold_start_date || sub.hold_end_date) && (
+                  <Text style={styles.holdText}>
+                    Paused {formatDate(sub.hold_start_date)} – {formatDate(sub.hold_end_date)}
+                  </Text>
+                )}
+
+                {typeof sub.deliveries_left === 'number' && (
+                  <Text style={styles.metaText}>
+                    {sub.deliveries_left} deliver{sub.deliveries_left === 1 ? 'y' : 'ies'} left
+                  </Text>
+                )}
+
+                <View style={styles.cardActions}>
+                  {sub.is_on_hold ? (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.actionPrimary]}
+                      disabled={pendingThis}
+                      onPress={() => resumeMutation.mutate(sub.id)}
+                    >
+                      {pendingThis ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.actionPrimaryText}>Resume</Text>
+                      )}
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.actionSecondary]}
+                      disabled={pendingThis}
+                      onPress={() => askPause(sub)}
+                    >
+                      <Text style={styles.actionSecondaryText}>Pause 7 days</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.actionDanger]}
+                    disabled={pendingThis}
+                    onPress={() => askCancel(sub)}
+                  >
+                    <Text style={styles.actionDangerText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })
         )}
 
-        {/* Spacer for bottom bar */}
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Bottom CTA */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
-        <TouchableOpacity style={styles.bottomBtn} onPress={() => router.push('/subscription/plans')}>
+        <TouchableOpacity
+          style={styles.bottomBtn}
+          onPress={() => router.push('/subscription/plans' as any)}
+        >
           <Text style={styles.bottomBtnText}>+ Add another plan</Text>
         </TouchableOpacity>
       </View>
@@ -109,35 +246,37 @@ export default function SubscriptionScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0B3F1F' },
-
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 24,
-  },
+  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
   closeBtn: { width: 36, height: 36, justifyContent: 'center' },
   headerTextWrap: { marginTop: 24 },
   headerCount: { fontSize: 40, fontWeight: '700', color: '#fff', lineHeight: 44 },
-  headerLabel: { fontSize: 24, color: '#fff', marginTop: 4 },
+  headerLabel: { fontSize: 22, color: '#fff', marginTop: 4 },
 
   scrollContent: { paddingHorizontal: 16 },
 
-  card: {
-    backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16,
+  card: { backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16 },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
-  cardSub: { fontSize: 14, color: '#6B7280', marginTop: 4 },
-  statusBadge: {
-    backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
-  },
-  statusBadgeText: { fontSize: 12, color: '#92400E', fontWeight: '600' },
+  cardTitle: { fontSize: 17, fontWeight: '700', color: '#111' },
+  cardSub: { fontSize: 13, color: '#6B7280', marginTop: 4 },
 
-  progressWrap: {
-    height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden', marginBottom: 8,
-  },
-  progressBar: { height: '100%', backgroundColor: '#4B8E3D', borderRadius: 4 },
-  progressLabel: { fontSize: 13, color: '#6B7280' },
+  holdBadge: { backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  holdBadgeText: { fontSize: 11, color: '#92400E', fontWeight: '700', letterSpacing: 0.5 },
+  holdText: { fontSize: 13, color: '#92400E', marginTop: 4 },
+  metaText: { fontSize: 13, color: '#0B262F', marginTop: 6 },
+
+  cardActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 999, alignItems: 'center' },
+  actionPrimary: { backgroundColor: '#1E7F3E' },
+  actionPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  actionSecondary: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#1E7F3E' },
+  actionSecondaryText: { color: '#1E7F3E', fontWeight: '700', fontSize: 14 },
+  actionDanger: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#C7463A' },
+  actionDangerText: { color: '#C7463A', fontWeight: '700', fontSize: 14 },
 
   emptyWrap: { alignItems: 'center', marginTop: 60 },
   emptyText: { fontSize: 18, color: 'rgba(255,255,255,0.7)', marginBottom: 20 },

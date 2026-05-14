@@ -1,51 +1,132 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Switch,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Modal, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
-import { formatPrice } from '../../src/shared/utils/helpers';
+import { ordersApi } from '../../src/features/orders/api/orders.api';
+import { addressesApi } from '../../src/features/addresses/api/addresses.api';
+import { usePayment } from '../../src/features/payments/hooks/usePayment';
+import type { PaymentMethod } from '../../src/features/payments/api/payments.api';
+
+const PAYMENT_OPTIONS: { method: PaymentMethod; label: string; sub: string; icon: any }[] = [
+  { method: 'razorpay', label: 'UPI / Cards (Razorpay)', sub: 'Pay using UPI, cards, netbanking', icon: 'card-outline' },
+  { method: 'stripe',   label: 'International cards (Stripe)', sub: 'Visa, Mastercard, Amex', icon: 'card' },
+  { method: 'cod',      label: 'Cash on Delivery', sub: 'Pay when your order arrives', icon: 'cash-outline' },
+];
 
 export default function CheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { items, totalPrice, updateQuantity, removeItem, clearCart } = useCartStore();
-  const { isAuthenticated } = useAuthStore();
+  const { items, totalPrice, clearCart, updateQuantity } = useCartStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const { pay, loading: paying } = usePayment();
 
-  const [startingFrom] = useState('Tomorrow');
-  const [deliveryInstruction] = useState('Hand it to me');
-  const [sendWhatsAppUpdates, setSendWhatsAppUpdates] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [placing, setPlacing] = useState(false);
   const [includeCutlery, setIncludeCutlery] = useState(false);
-  const [includeNapkins, setIncludeNapkins] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [sendWhatsAppUpdates, setSendWhatsAppUpdates] = useState(true);
 
-  const handlePlaceOrder = async () => {
+  const addressesQuery = useQuery({
+    queryKey: ['addresses'],
+    queryFn: addressesApi.list,
+    enabled: isAuthenticated,
+  });
+
+  const defaultAddress = useMemo(() => {
+    const list = addressesQuery.data ?? [];
+    return list.find((a) => a.is_default) ?? list[0];
+  }, [addressesQuery.data]);
+
+  const phone = (user as any)?.phone_number || (user as any)?.username || '';
+
+  const startCheckout = () => {
     if (!isAuthenticated) {
-      router.push('/(auth)/login');
+      router.push('/(auth)/login' as any);
       return;
     }
-    setLoading(true);
+    if (items.length === 0) return;
+    if (!defaultAddress) {
+      Alert.alert('Add a delivery address', 'Please save an address before placing an order.', [
+        { text: 'Add address', onPress: () => router.push('/profile-pages/addresses' as any) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    setSheetOpen(true);
+  };
+
+  const onPickMethod = async (method: PaymentMethod) => {
+    setSheetOpen(false);
+    setPlacing(true);
     try {
-      setTimeout(() => {
+      const deliveryAreaId = defaultAddress!.delivery_area?.id;
+      if (!deliveryAreaId) {
+        Alert.alert(
+          'Missing delivery area',
+          'This address is not linked to a delivery area. Please edit the address and try again.'
+        );
+        return;
+      }
+
+      const placeRes = await ordersApi.placeOrder({
+        address_id: defaultAddress!.id,
+        delivery_area_id: deliveryAreaId,
+        phone: defaultAddress!.contact_number || phone,
+        delivery_instructions: 'Hand it to me',
+        notes: includeCutlery ? 'Include cutlery' : '',
+        items: items.map((i) => ({ meal_item_id: parseInt(i.id, 10), quantity: i.qty })),
+      });
+
+      const orderIds: number[] = placeRes?.order_ids ?? [];
+      if (orderIds.length === 0) {
+        Alert.alert('Order failed', 'We could not place your order. Please try again.');
+        return;
+      }
+
+      const payRes = await pay({ method, orderIds });
+      if (payRes.status === 'paid') {
         clearCart();
-        setLoading(false);
-        Alert.alert('🎉 Order Placed!', 'Your order has been placed successfully', [
-          { text: 'View Orders', onPress: () => { router.dismissAll(); router.push('/(tabs)/orders'); } },
+        Alert.alert('Order placed', 'Payment successful — your meal is on the way!', [
+          {
+            text: 'View order',
+            onPress: () => {
+              router.dismissAll();
+              router.push(`/orders/my/${orderIds[0]}` as any);
+            },
+          },
         ]);
-      }, 1500);
-    } catch {
-      setLoading(false);
-      Alert.alert('Error', 'Failed to place order');
+      } else if (payRes.status === 'cancelled') {
+        Alert.alert(
+          'Payment cancelled',
+          'Your order is reserved but unpaid. Try again from your orders screen.',
+          [{ text: 'OK' }]
+        );
+      } else if (payRes.error === 'payment_sdk_missing') {
+        Alert.alert(
+          'Update required',
+          'Card payments need an app update. Use Cash on Delivery for now.'
+        );
+      } else {
+        Alert.alert('Payment failed', payRes.error || 'Please try a different method.');
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || e?.message || 'Something went wrong';
+      Alert.alert('Could not place order', String(msg));
+    } finally {
+      setPlacing(false);
     }
   };
 
+  const busy = placing || paying;
+  const canCheckout = items.length > 0 && !busy;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#111" />
@@ -54,26 +135,12 @@ export default function CheckoutScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 200, backgroundColor: '#fff' }}>
-        {/* Banner */}
-        <View style={styles.banner}>
-          <View style={styles.bannerTextCol}>
-            <Text style={styles.bannerTitle}>No time to cook? Try <Text style={{fontWeight:'500'}}>subscription</Text></Text>
-            <TouchableOpacity>
-              <Text style={styles.bannerLink}>Tell me more</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity style={styles.bannerClose}>
-            <Ionicons name="close" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── Cart Items ─── */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 220 }}>
         <View>
           {items.length === 0 ? (
             <View style={styles.emptyCart}>
               <Text style={styles.emptyText}>Your cart is empty</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/menu')}>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/menu' as any)}>
                 <Text style={styles.browseLink}>Browse Menu</Text>
               </TouchableOpacity>
             </View>
@@ -84,23 +151,14 @@ export default function CheckoutScreen() {
                   <View style={styles.vegIndicator}><View style={styles.vegDot} /></View>
                   <Text style={styles.cartItemName}>{item.name}</Text>
                 </View>
-
                 <View style={styles.cartItemBottomRow}>
                   <Text style={styles.cartItemPrice}>₹{item.price * item.qty}</Text>
-                  
-                  {/* Qty Controls */}
                   <View style={styles.qtyControls}>
-                    <TouchableOpacity
-                      style={styles.qtyBtn}
-                      onPress={() => updateQuantity(item.id, item.qty - 1)}
-                    >
+                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.id, item.qty - 1)}>
                       <Ionicons name="remove" size={18} color="#111" />
                     </TouchableOpacity>
                     <Text style={styles.qtyText}>{item.qty}</Text>
-                    <TouchableOpacity
-                      style={styles.qtyBtn}
-                      onPress={() => updateQuantity(item.id, item.qty + 1)}
-                    >
+                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.id, item.qty + 1)}>
                       <Ionicons name="add" size={18} color="#111" />
                     </TouchableOpacity>
                   </View>
@@ -110,30 +168,25 @@ export default function CheckoutScreen() {
           )}
         </View>
 
-        <Divider />
+        <View style={{ height: 1, backgroundColor: '#E6E6E6' }} />
 
-        {/* ─── Action Rows ─── */}
-        <View style={{ backgroundColor: '#fff', paddingVertical: 8 }}>
-          <CheckboxActionRow
-            label="Add spoons? napkins? Other cutlery?"
-            subLabel="Leave a comment..."
-            checked={includeCutlery}
-            onChange={() => setIncludeCutlery(!includeCutlery)}
-          />
-          <Divider />
-          <ActionRow
-            icon="calendar-outline"
-            label="Delivery instructions"
-            value="Hand it to me"
-          />
-          <Divider />
-        </View>
+        <TouchableOpacity
+          style={styles.actionRow}
+          onPress={() => setIncludeCutlery((v) => !v)}
+          activeOpacity={0.7}
+        >
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flex: 1 }}>
+            <View style={[styles.checkbox, includeCutlery && styles.checkboxChecked]}>
+              {includeCutlery && <Ionicons name="checkmark" size={16} color="#0B262F" />}
+            </View>
+            <Text style={styles.actionLabelText}>Include cutlery & napkins</Text>
+          </View>
+        </TouchableOpacity>
 
-        {/* ─── WhatsApp Toggle ─── */}
         <TouchableOpacity
           style={styles.whatsappRow}
           activeOpacity={0.7}
-          onPress={() => setSendWhatsAppUpdates(v => !v)}
+          onPress={() => setSendWhatsAppUpdates((v) => !v)}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={[styles.circleCheck, sendWhatsAppUpdates && styles.circleCheckActive]}>
@@ -147,112 +200,100 @@ export default function CheckoutScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ─── Coupon ─── */}
-        <View style={styles.sectionPad}>
-          <TouchableOpacity style={styles.couponCard} activeOpacity={0.8}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-              <Ionicons name="pricetag" size={20} color="#0C7238" />
-              <View>
-                <Text style={styles.couponTitle}>Apply coupon</Text>
-                <Text style={styles.couponSub}>2 Applicable</Text>
-              </View>
-            </View>
-            <Text style={styles.couponLink}>View offers</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── Order Summary ─── */}
         <View style={[styles.sectionPad, { paddingTop: 8 }]}>
-          <Text style={styles.summaryTitle}>Order summery</Text>
-          <SummaryRow label="Item total" value={`₹ ${totalPrice}`} />
-          <SummaryRow label="Discount" value={`₹ 0`} />
+          <Text style={styles.summaryTitle}>Order summary</Text>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Item total</Text><Text style={styles.summaryValue}>₹ {totalPrice}</Text></View>
+          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Discount</Text><Text style={styles.summaryValue}>₹ 0</Text></View>
           <View style={styles.dashedDivider} />
-          <SummaryRow label="To be payed" value={`₹ ${totalPrice}`} bold />
-        </View>
-
-        {/* ─── Cancellation Note ─── */}
-        <View style={styles.noteContainer}>
-          <Text style={styles.noteTitle}>Note</Text>
-          <Text style={styles.noteDesc}>One time orders can not be cancelled or refunded once placed</Text>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { fontWeight: '600', color: '#0B262F', fontSize: 18 }]}>To be paid</Text>
+            <Text style={[styles.summaryValue, { fontWeight: '600', color: '#0B262F', fontSize: 18 }]}>₹ {totalPrice}</Text>
+          </View>
         </View>
       </ScrollView>
 
-      {/* ─── Fixed Bottom ─── */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
-        {/* Address */}
         <View style={styles.addressRow}>
           <View style={styles.addressLeft}>
             <Ionicons name="location-outline" size={24} color="#0B262F" />
             <Text numberOfLines={1} style={styles.addressText}>
-              <Text style={{ fontWeight: '600', color: '#0B262F' }}>Home</Text>
-              <Text style={{ color: '#6C6C6C' }}> - Oberoi Apartment, sector...</Text>
+              {addressesQuery.isLoading ? (
+                'Loading address…'
+              ) : defaultAddress ? (
+                <>
+                  <Text style={{ fontWeight: '600', color: '#0B262F' }}>{defaultAddress.label || 'Home'}</Text>
+                  <Text style={{ color: '#6C6C6C' }}> – {defaultAddress.address}</Text>
+                </>
+              ) : (
+                <Text style={{ color: '#C7463A' }}>Add a delivery address</Text>
+              )}
             </Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/profile-pages/addresses')}>
-            <Text style={styles.changeText}>Change</Text>
+          <TouchableOpacity onPress={() => router.push('/profile-pages/addresses' as any)}>
+            <Text style={styles.changeText}>{defaultAddress ? 'Change' : 'Add'}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* CTA */}
         <TouchableOpacity
-          style={[styles.payBtn, loading && { opacity: 0.7 }]}
-          onPress={handlePlaceOrder}
-          disabled={loading}
+          style={[styles.payBtn, !canCheckout && { opacity: 0.55 }]}
+          onPress={startCheckout}
+          disabled={!canCheckout}
           activeOpacity={0.9}
         >
-          <Text style={styles.payBtnText}>
-            {loading ? 'Placing Order...' : `Proceed to Pay ₹${totalPrice}`}
-          </Text>
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.payBtnText}>Proceed to Pay ₹{totalPrice}</Text>
+          )}
         </TouchableOpacity>
       </View>
+
+      <PaymentMethodSheet
+        visible={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        onPick={onPickMethod}
+        amount={totalPrice}
+      />
     </View>
   );
 }
 
-/* ── Helper Components ── */
-
-function Divider() {
-  return <View style={{ height: 1, backgroundColor: '#E6E6E6' }} />;
-}
-
-function ActionRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+function PaymentMethodSheet({
+  visible, onClose, onPick, amount,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (m: PaymentMethod) => void;
+  amount: number;
+}) {
   return (
-    <TouchableOpacity style={styles.actionRow} activeOpacity={0.7}>
-      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flex: 1 }}>
-        <Ionicons name={icon as any} size={24} color="#0B262F" />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.actionLabelText}>{label}</Text>
-          <Text style={styles.actionValue}>{value}</Text>
-        </View>
-      </View>
-      <Ionicons name="chevron-forward" size={24} color="#0B262F" />
-    </TouchableOpacity>
-  );
-}
-
-function CheckboxActionRow({ label, subLabel, checked, onChange }: any) {
-  return (
-    <TouchableOpacity style={styles.actionRow} onPress={onChange} activeOpacity={0.7}>
-      <View style={{ flexDirection: 'row', gap: 12, flex: 1, alignItems: 'center' }}>
-        <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-          {checked && <Ionicons name="checkmark" size={16} color="#0B262F" />}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.actionLabelText}>{label}</Text>
-          <Text style={styles.actionValue}>{subLabel}</Text>
-        </View>
-      </View>
-      <Ionicons name="chevron-forward" size={24} color="#0B262F" />
-    </TouchableOpacity>
-  );
-}
-
-function SummaryRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <View style={styles.summaryRow}>
-      <Text style={[styles.summaryLabel, bold && { fontWeight: '600', color: '#0B262F', fontSize: 18 }]}>{label}</Text>
-      <Text style={[styles.summaryValue, bold && { fontWeight: '600', color: '#0B262F', fontSize: 18 }]}>{value}</Text>
-    </View>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Choose payment method</Text>
+          <Text style={styles.sheetSub}>Amount: ₹{amount}</Text>
+          {PAYMENT_OPTIONS.map((opt) => (
+            <TouchableOpacity
+              key={opt.method}
+              style={styles.methodRow}
+              activeOpacity={0.85}
+              onPress={() => onPick(opt.method)}
+            >
+              <Ionicons name={opt.icon} size={26} color="#0B262F" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.methodLabel}>{opt.label}</Text>
+                <Text style={styles.methodSub}>{opt.sub}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#6C6C6C" />
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity onPress={onClose} style={styles.sheetCancel}>
+            <Text style={styles.sheetCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -265,62 +306,42 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '600', color: '#141414' },
   sectionPad: { paddingHorizontal: 20, paddingVertical: 16 },
 
-  /* Banner */
-  banner: {
-    backgroundColor: '#04360F', flexDirection: 'row', alignItems: 'flex-start',
-    paddingHorizontal: 20, paddingVertical: 12, justifyContent: 'space-between',
-  },
-  bannerTextCol: { flex: 1, gap: 4 },
-  bannerTitle: { fontSize: 16, color: '#fff', lineHeight: 22 },
-  bannerLink: { fontSize: 16, color: '#3AC924', fontWeight: '500', lineHeight: 22 },
-  bannerClose: { padding: 4 },
-
-  /* Cart items */
   emptyCart: { alignItems: 'center', paddingVertical: 32 },
   emptyText: { fontSize: 14, color: '#6B7280' },
   browseLink: { fontSize: 14, fontWeight: '600', color: '#4B8E3D', marginTop: 12 },
-  cartItem: {
-    paddingHorizontal: 20, paddingVertical: 16,
-  },
+  cartItem: { paddingHorizontal: 20, paddingVertical: 16 },
   cartItemBorder: { borderBottomWidth: 1, borderBottomColor: '#E6E6E6' },
   cartItemRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   vegIndicator: {
     width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: '#08B853',
     justifyContent: 'center', alignItems: 'center',
   },
-  vegDot: {
-    width: 10, height: 10, borderRadius: 5, backgroundColor: '#08B853',
-  },
+  vegDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#08B853' },
   cartItemName: { fontSize: 16, fontWeight: '500', color: '#111', flex: 1 },
   cartItemBottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   cartItemPrice: { fontSize: 20, fontWeight: '600', color: '#0B262F' },
   qtyControls: {
-    flexDirection: 'row', alignItems: 'center', borderWidth: 1,
-    borderColor: '#098323', borderRadius: 999, paddingHorizontal: 16, paddingVertical: 8,
-    justifyContent: 'space-between', width: 117,
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#098323',
+    borderRadius: 999, paddingHorizontal: 16, paddingVertical: 8, justifyContent: 'space-between', width: 117,
   },
   qtyText: { fontSize: 16, fontWeight: '400', color: '#111' },
   qtyBtn: { padding: 4 },
 
-  /* Action Rows */
   actionRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff'
+    paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff',
   },
-  actionLabelText: { fontSize: 16, color: '#6C6C6C', fontWeight: '500', lineHeight: 22 },
-  actionValue: { fontSize: 16, fontWeight: '500', color: '#0B262F', lineHeight: 22 },
-
-  /* Checkbox */
+  actionLabelText: { fontSize: 16, color: '#0B262F', fontWeight: '500', lineHeight: 22 },
   checkbox: {
     width: 24, height: 24, borderRadius: 8, borderWidth: 1.5, borderColor: '#D5D8D7',
     justifyContent: 'center', alignItems: 'center',
   },
   checkboxChecked: { backgroundColor: '#E8F5E9', borderColor: '#0B262F' },
 
-  /* WhatsApp */
-  whatsappRow: { 
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
-    paddingHorizontal: 20, paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: '#EFEFEF', backgroundColor: '#fff'
+  whatsappRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#EFEFEF',
+    borderBottomWidth: 1, borderBottomColor: '#EFEFEF', backgroundColor: '#fff',
   },
   circleCheck: {
     width: 24, height: 24, borderRadius: 12, backgroundColor: '#EFEFEF',
@@ -329,43 +350,40 @@ const styles = StyleSheet.create({
   circleCheckActive: { backgroundColor: '#2C921D' },
   whatsappText: { fontSize: 14, color: '#0B262F', fontWeight: '600' },
 
-  /* Coupon */
-  couponCard: {
-    backgroundColor: '#D7FAE7', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 16,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-  },
-  couponTitle: { fontSize: 18, fontWeight: '500', color: '#0B262F' },
-  couponSub: { fontSize: 14, color: '#0B262F', marginTop: 4, fontWeight: '500' },
-  couponLink: { fontSize: 12, fontWeight: '600', color: '#0C7238' },
-
-  /* Note section */
-  noteContainer: { paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#CCC', backgroundColor: '#FFF' },
-  noteTitle: { fontSize: 16, fontWeight: '500', color: '#C7463A', marginBottom: 4 },
-  noteDesc: { fontSize: 16, fontWeight: '500', color: '#0B262F' },
-
-  /* Summary */
   summaryTitle: { fontSize: 18, fontWeight: '500', color: '#706F6F', marginBottom: 16 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
   summaryLabel: { fontSize: 16, color: '#0B262F' },
   summaryValue: { fontSize: 16, color: '#6A6A6A', fontWeight: '500' },
   dashedDivider: { height: 1, borderTopWidth: 1, borderStyle: 'dashed', borderColor: '#BFBFBF', marginVertical: 12 },
 
-  /* Bottom Bar */
-  bottomBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff',
-  },
+  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff' },
   addressRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#E2DEDE', borderBottomWidth: 1, borderBottomColor: '#E2DEDE',
-    marginBottom: 16, height: 48,
+    paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#E2DEDE',
+    borderBottomWidth: 1, borderBottomColor: '#E2DEDE', marginBottom: 16, height: 48,
   },
   addressLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   addressText: { fontSize: 14, flex: 1 },
   changeText: { fontSize: 16, fontWeight: '500', color: '#0B262F' },
   payBtn: {
-    marginHorizontal: 20, backgroundColor: '#2C921D',
-    borderRadius: 90, paddingVertical: 16, alignItems: 'center',
+    marginHorizontal: 20, backgroundColor: '#2C921D', borderRadius: 90, paddingVertical: 16, alignItems: 'center',
   },
   payBtnText: { color: '#fff', fontWeight: '500', fontSize: 16 },
+
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32,
+  },
+  sheetHandle: { alignSelf: 'center', width: 44, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1', marginBottom: 12 },
+  sheetTitle: { fontSize: 18, fontWeight: '600', color: '#0B262F' },
+  sheetSub: { fontSize: 14, color: '#6C6C6C', marginTop: 4, marginBottom: 16 },
+  methodRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14,
+    borderTopWidth: 1, borderTopColor: '#EFEFEF',
+  },
+  methodLabel: { fontSize: 15, fontWeight: '600', color: '#0B262F' },
+  methodSub: { fontSize: 13, color: '#6C6C6C', marginTop: 2 },
+  sheetCancel: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  sheetCancelText: { fontSize: 15, fontWeight: '600', color: '#0B262F' },
 });

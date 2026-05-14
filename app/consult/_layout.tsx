@@ -7,6 +7,7 @@ export default function ConsultLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="booking" />
       <Stack.Screen name="intro" />
+      <Stack.Screen name="my" />
     </Stack>
   );
 }

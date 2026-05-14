@@ -1,17 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  StyleSheet, Image, Dimensions, RefreshControl, Modal, ScrollView, TouchableWithoutFeedback,
+  StyleSheet, Image, Dimensions, RefreshControl, Modal, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMeals } from '../../src/features/catalog/hooks/useMeals';
+import { useInfiniteMeals } from '../../src/features/catalog/hooks/useMeals';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
+import { colors, spacing, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
+import { useDebounce } from '../../src/shared/utils/useDebounce';
+import { FastList } from '../../src/shared/components/FastList';
 import type { MealItem } from '../../src/features/catalog/types/meal.types';
 
 const { width } = Dimensions.get('window');
@@ -28,40 +30,46 @@ const FILTERS = [
 export default function MenuScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { data: meals, isLoading, refetch } = useMeals();
   const addItem = useCartStore((s) => s.addItem);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const cartItems = useCartStore((s) => s.items);
   const totalItems = useCartStore((s) => s.totalItems);
-  const totalPrice = useCartStore((s) => s.totalPrice);
 
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MealItem | null>(null);
 
-  const filteredMeals = useMemo(() => {
-    let filtered = meals || [];
-    if (search.trim()) {
-      const s = search.toLowerCase();
-      filtered = filtered.filter(m =>
-        m.name.toLowerCase().includes(s) || m.description?.toLowerCase().includes(s)
-      );
-    }
-    if (activeFilter !== 'all') {
-      filtered = filtered.filter(m => {
-        const cat = m.category && typeof m.category === 'object' ? m.category.name : m.category_name || '';
-        return cat.toLowerCase().includes(activeFilter.toLowerCase());
-      });
-    }
-    return filtered;
-  }, [meals, search, activeFilter]);
+  // Server search runs only after the user pauses typing for 300ms.
+  const debouncedSearch = useDebounce(search, 300);
+  // Filter pills add an extra search term so the server filters.
+  // (Real category-id filters need a categories endpoint mapping; that's a follow-up.)
+  const effectiveSearch =
+    activeFilter === 'all' ? debouncedSearch : `${debouncedSearch} ${activeFilter}`.trim();
 
-  const onRefresh = async () => {
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useInfiniteMeals({ search: effectiveSearch || undefined });
+
+  const meals = useMemo<MealItem[]>(() => {
+    if (!data) return [];
+    return data.pages.flatMap((p) => p.items);
+  }, [data]);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
-  };
+  }, [refetch]);
+
+  const onEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const getCartQty = (itemId: string | number) => {
     const ci = cartItems.find(i => i.id === String(itemId));
@@ -350,15 +358,23 @@ export default function MenuScreen() {
       </View>
 
       {/* ─── MEALS GRID ─── */}
-      <FlatList
-        data={filteredMeals}
+      <FastList<MealItem>
+        data={meals}
         numColumns={2}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderMeal}
+        estimatedItemSize={210}
         contentContainerStyle={styles.gridContent}
         columnWrapperStyle={styles.gridRow}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.4}
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <Ionicons name="restaurant-outline" size={48} color={colors.text.disabled} />

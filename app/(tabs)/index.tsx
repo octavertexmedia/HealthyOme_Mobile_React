@@ -8,8 +8,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useQuery } from '@tanstack/react-query';
 import { useFeaturedMeals } from '../../src/features/catalog/hooks/useMeals';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
+import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import { rewardsApi } from '../../src/features/rewards/api/rewards.api';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 
 // SVG Imports
@@ -58,7 +61,16 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { data: featuredMeals, refetch: refetchMeals } = useFeaturedMeals();
   const addItem = useCartStore((s) => s.addItem);
+  const cartCount = useCartStore((s) => s.totalItems);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [refreshing, setRefreshing] = React.useState(false);
+
+  const pointsQuery = useQuery({
+    queryKey: ['rewards', 'points'],
+    queryFn: rewardsApi.getUserPoints,
+    enabled: isAuthenticated,
+    staleTime: 60 * 1000,
+  });
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -99,9 +111,26 @@ export default function HomeScreen() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cartCircle} onPress={() => router.push('/cart')}>
-              <Ionicons name="cart-outline" size={20} color="#111" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              {isAuthenticated && (
+                <TouchableOpacity
+                  style={styles.pointsPill}
+                  onPress={() => router.push('/rewards' as any)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="star" size={14} color="#F5A623" />
+                  <Text style={styles.pointsText}>{pointsQuery.data ?? 0}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.cartCircle} onPress={() => router.push('/cart')}>
+                <Ionicons name="cart-outline" size={20} color="#111" />
+                {cartCount > 0 && (
+                  <View style={styles.cartBadge}>
+                    <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Hero Content */}
@@ -337,6 +366,18 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
     justifyContent: 'center', alignItems: 'center',
   },
+  cartBadge: {
+    position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18,
+    paddingHorizontal: 4, borderRadius: 9, backgroundColor: '#C7463A',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#fff',
+  },
+  cartBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  pointsPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#fff', paddingHorizontal: 10, height: 32, borderRadius: 16,
+  },
+  pointsText: { fontSize: 13, fontWeight: '700', color: '#0B262F' },
   heroContent: { zIndex: 10, marginTop: 24, position: 'relative' },
   heroTitle: {
     fontSize: 24, fontWeight: '800', color: '#fff', lineHeight: 32, letterSpacing: 0.5,

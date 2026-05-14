@@ -1,13 +1,14 @@
 import React from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { rewardsApi } from '../../src/features/rewards/api/rewards.api';
+import { rewardsApi, type Reward } from '../../src/features/rewards/api/rewards.api';
+import { useAuthStore } from '../../src/features/auth/store/auth.store';
 
 const EARN_METHODS = [
   {
@@ -33,18 +34,68 @@ const EARN_METHODS = [
 export default function RewardsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const { data: rewards } = useQuery({
     queryKey: ['rewards'],
     queryFn: rewardsApi.getRewards,
   });
-  const { data: userPointsData } = useQuery({
+  const { data: userPointsData } = useQuery<number>({
     queryKey: ['rewards', 'points'],
     queryFn: rewardsApi.getUserPoints,
+    enabled: isAuthenticated,
   });
 
-  const userPoints = (userPointsData as any) || 0;
+  const userPoints = userPointsData ?? 0;
   const rewardsList = rewards || [];
+
+  const claimMutation = useMutation({
+    mutationFn: (rewardId: number) => rewardsApi.claimReward(rewardId),
+    // Optimistic — drop the user's visible balance immediately, restore on error.
+    onMutate: async (rewardId) => {
+      await queryClient.cancelQueries({ queryKey: ['rewards', 'points'] });
+      const previous = queryClient.getQueryData<number>(['rewards', 'points']) ?? 0;
+      const reward = rewardsList.find((r: Reward) => r.id === rewardId);
+      const cost = reward?.points_required ?? 0;
+      queryClient.setQueryData<number>(['rewards', 'points'], Math.max(0, previous - cost));
+      return { previous };
+    },
+    onError: (err: any, _rewardId, ctx) => {
+      if (ctx?.previous !== undefined) {
+        queryClient.setQueryData(['rewards', 'points'], ctx.previous);
+      }
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.detail ||
+        'Could not claim this reward. Please try again.';
+      Alert.alert('Claim failed', String(msg));
+    },
+    onSuccess: () => {
+      Alert.alert('Reward claimed', 'Your reward has been applied to your account.');
+      queryClient.invalidateQueries({ queryKey: ['rewards'] });
+      queryClient.invalidateQueries({ queryKey: ['rewards', 'history'] });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['rewards', 'points'] });
+    },
+  });
+
+  const onClaim = (reward: Reward) => {
+    if (!isAuthenticated) {
+      router.push('/(auth)/login' as any);
+      return;
+    }
+    if (userPoints < reward.points_required) return;
+    Alert.alert(
+      'Claim reward?',
+      `${reward.name} — costs ${reward.points_required} pts. You have ${userPoints} pts.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Claim', onPress: () => claimMutation.mutate(reward.id) },
+      ]
+    );
+  };
 
   const getRewardEmoji = (type: string) => {
     if (type === 'free_meal') return '🥗';
@@ -120,16 +171,29 @@ export default function RewardsScreen() {
                   <TouchableOpacity
                     style={[
                       styles.claimBtn,
-                      userPoints >= reward.points_required ? styles.claimBtnActive : styles.claimBtnLocked
+                      userPoints >= reward.points_required ? styles.claimBtnActive : styles.claimBtnLocked,
                     ]}
-                    disabled={userPoints < reward.points_required}
+                    disabled={
+                      userPoints < reward.points_required ||
+                      (claimMutation.isPending && claimMutation.variables === reward.id)
+                    }
+                    onPress={() => onClaim(reward)}
                   >
-                    <Text style={[
-                      styles.claimBtnText,
-                      { color: userPoints >= reward.points_required ? '#4B8E3D' : '#9CA3AF' }
-                    ]}>
-                      {userPoints >= reward.points_required ? 'Claim' : 'Locked'}
-                    </Text>
+                    {claimMutation.isPending && claimMutation.variables === reward.id ? (
+                      <ActivityIndicator size="small" color="#4B8E3D" />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.claimBtnText,
+                          {
+                            color:
+                              userPoints >= reward.points_required ? '#4B8E3D' : '#9CA3AF',
+                          },
+                        ]}
+                      >
+                        {userPoints >= reward.points_required ? 'Claim' : 'Locked'}
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>

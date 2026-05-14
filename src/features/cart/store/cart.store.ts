@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { zustandMMKVStorage } from '../../../shared/storage/mmkv';
+import type { ServerCart } from '../api/cart.api';
 
 export interface CartItem {
   id: string;
+  serverItemId?: number | null;
   name: string;
   price: number;
   qty: number;
@@ -17,11 +19,12 @@ interface CartStore {
   items: CartItem[];
   totalItems: number;
   totalPrice: number;
-  
+
   addItem: (item: Omit<CartItem, 'qty'> & { quantity?: number }) => void;
   updateQuantity: (id: string, qty: number) => void;
   removeItem: (id: string) => void;
   clearCart: () => void;
+  hydrateFromServer: (cart: ServerCart) => void;
 }
 
 const recalculate = (items: CartItem[]) => ({
@@ -69,6 +72,24 @@ export const useCartStore = create<CartStore>()(
       },
 
       clearCart: () => set({ items: [], totalItems: 0, totalPrice: 0 }),
+
+      hydrateFromServer: (cart) => {
+        const items: CartItem[] = (cart.items ?? []).map((si) => ({
+          id: String(si.meal_item_id),
+          serverItemId: si.id,
+          name: si.name,
+          price: Number(si.price),
+          qty: si.quantity,
+          image: si.image,
+        }));
+        set({
+          items,
+          totalItems: cart.total_items ?? items.reduce((s, i) => s + i.qty, 0),
+          totalPrice: Number(
+            cart.total_price ?? items.reduce((s, i) => s + i.price * i.qty, 0)
+          ),
+        });
+      },
     }),
     {
       name: 'cart-store',

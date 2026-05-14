@@ -8,11 +8,39 @@ interface PaginatedResponse<T> {
   results: T[];
 }
 
+export interface MealsPage {
+  items: MealItem[];
+  hasMore: boolean;
+  nextPage: number | null;
+}
+
 export const mealsApi = {
   getMeals: async (): Promise<MealItem[]> => {
     const response = await apiClient.get<PaginatedResponse<MealItem> | MealItem[]>('/meals/');
     if (Array.isArray(response.data)) return response.data;
     return response.data.results || [];
+  },
+
+  getMealsPage: async (params: {
+    page?: number;
+    search?: string;
+    category?: number;
+  }): Promise<MealsPage> => {
+    const cleaned: Record<string, any> = { page: params.page ?? 1 };
+    if (params.search?.trim()) cleaned.search = params.search.trim();
+    if (params.category) cleaned.category = params.category;
+    const response = await apiClient.get<PaginatedResponse<MealItem> | MealItem[]>('/meals/', {
+      params: cleaned,
+    });
+    if (Array.isArray(response.data)) {
+      return { items: response.data, hasMore: false, nextPage: null };
+    }
+    const { results, next } = response.data;
+    return {
+      items: results || [],
+      hasMore: !!next,
+      nextPage: next ? (params.page ?? 1) + 1 : null,
+    };
   },
 
   getMeal: async (id: number): Promise<MealItem> => {

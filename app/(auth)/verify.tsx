@@ -59,23 +59,22 @@ export default function VerifyScreen() {
 
     setLoading(true);
     try {
-      let response;
-      if (params.mode === 'email') {
-        response = await authApi.verifyEmailOTP(params.email || '', code);
-      } else {
-        response = await authApi.verifyOTP(params.phone || '', code);
+      const response =
+        params.mode === 'email'
+          ? await authApi.verifyEmailOTP(params.email || '', code)
+          : await authApi.verifyOTP(params.phone || '', code);
+
+      const access = response?.tokens?.access;
+      const refresh = response?.tokens?.refresh;
+
+      if (!access || !refresh || !response.user) {
+        Alert.alert('Error', 'Verification failed — please try again');
+        return;
       }
 
-      if (response.success || response.token || response.user) {
-        const user = response.user || { id: 0, username: '', email: '', first_name: '', last_name: '' };
-        const token = response.token || response.access || '';
-        const refreshToken = response.refresh_token || response.refresh || '';
-        setAuth(user, token, refreshToken);
-        router.dismissAll();
-        router.replace('/(tabs)');
-      } else {
-        Alert.alert('Error', response.error || response.message || 'Verification failed');
-      }
+      setAuth(response.user, access, refresh);
+      router.dismissAll();
+      router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.error || 'Failed to verify OTP');
     } finally {

@@ -1,5 +1,20 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { mealsApi } from '../api/meals.api';
+
+export const useInfiniteMeals = (params: { search?: string; category?: number }) => {
+  return useInfiniteQuery({
+    queryKey: ['meals', 'infinite', params.search ?? '', params.category ?? null],
+    queryFn: ({ pageParam }) =>
+      mealsApi.getMealsPage({
+        page: pageParam as number,
+        search: params.search,
+        category: params.category,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => last.nextPage,
+    staleTime: 60 * 1000,
+  });
+};
 
 export const useMeals = () => {
   return useQuery({
