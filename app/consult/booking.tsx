@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,29 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Modal,
   Image,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { consultationsApi, type Dietician } from '../../src/features/consultations/api/consultations.api';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  resolveMediaUrl,
+  slotStartISO,
+  type AvailabilitySlot,
+  type ConsultPlan,
+  type Dietician,
+} from '../../src/features/consultations/api/consultations.api';
+import {
+  consultKeys,
+  useAvailability,
+  useConsultPlans,
+  useCreateBooking,
+  useDieticians,
+} from '../../src/features/consultations/hooks/useConsult';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { usePayment } from '../../src/features/payments/hooks/usePayment';
-import type { PaymentMethod } from '../../src/features/payments/api/payments.api';
-
-const PAYMENT_OPTIONS: { method: PaymentMethod; label: string; sub: string; icon: any }[] = [
-  { method: 'razorpay', label: 'UPI / Cards (Razorpay)', sub: 'Pay using UPI, cards, netbanking', icon: 'card-outline' },
-  { method: 'stripe', label: 'International cards (Stripe)', sub: 'Visa, Mastercard, Amex', icon: 'card' },
-  { method: 'cod', label: 'Cash at consultation', sub: 'Pay during the session', icon: 'cash-outline' },
-];
 
 function isoLocalDate(daysAhead: number): string {
   const d = new Date();
@@ -37,15 +40,18 @@ function isoLocalDate(daysAhead: number): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function labelForDate(iso: string, idx: number): string {
-  if (idx === 0) return 'Today';
-  if (idx === 1) return 'Tomorrow';
+function labelForDate(iso: string): string {
+  const today = isoLocalDate(0);
+  const tomorrow = isoLocalDate(1);
+  if (iso === today) return 'Today';
+  if (iso === tomorrow) return 'Tomorrow';
   const d = new Date(iso + 'T00:00:00');
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-function formatSlotTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+function formatSlotTime(slot: AvailabilitySlot): string {
+  const d = new Date(`${slot.date}T${slot.startTime}:00`);
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 export default function ConsultBookingScreen() {
@@ -53,92 +59,121 @@ export default function ConsultBookingScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const user = useAuthStore((s) => s.user);
   const { pay, loading: paying } = usePayment();
 
-  const dates = useMemo(() => Array.from({ length: 7 }, (_, i) => isoLocalDate(i)), []);
-  const [date, setDate] = useState(dates[0]);
-  const [selectedDietician, setSelectedDietician] = useState<Dietician | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [pendingBookingId, setPendingBookingId] = useState<number | null>(null);
+  const rangeFrom = useMemo(() => isoLocalDate(0), []);
+  const rangeTo = useMemo(() => isoLocalDate(29), []);
 
-  const defaultPhone = (user as any)?.phone_number || (user as any)?.username || '';
-  const [phoneInput, setPhoneInput] = useState(defaultPhone);
+  const [selectedDietician, setSelectedDietician] = useState<Dietician | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<ConsultPlan | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
+  const [pendingBookingId, setPendingBookingId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
 
-  const dieticiansQuery = useQuery({
-    queryKey: ['dieticians'],
-    queryFn: consultationsApi.listDieticians,
-  });
+  const dieticiansQuery = useDieticians();
+  const plansQuery = useConsultPlans();
+  const availabilityQuery = useAvailability(selectedDietician?.id, rangeFrom, rangeTo);
+  const bookMutation = useCreateBooking();
 
-  const slotsQuery = useQuery({
-    queryKey: ['slots', selectedDietician?.id, date],
-    queryFn: () => consultationsApi.listSlots(selectedDietician!.id, date),
-    enabled: !!selectedDietician,
-    staleTime: 30 * 1000,
-  });
+  // Default-select the recommended plan (or first) once plans load.
+  useEffect(() => {
+    if (!selectedPlan && plansQuery.data && plansQuery.data.length > 0) {
+      setSelectedPlan(plansQuery.data.find((p) => p.recommended) ?? plansQuery.data[0]);
+    }
+  }, [plansQuery.data, selectedPlan]);
 
-  const bookMutation = useMutation({
-    mutationFn: consultationsApi.book,
-  });
+  // Group availability slots by date.
+  const slotsByDate = useMemo(() => {
+    const map: Record<string, AvailabilitySlot[]> = {};
+    for (const slot of availabilityQuery.data ?? []) {
+      (map[slot.date] ??= []).push(slot);
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    }
+    return map;
+  }, [availabilityQuery.data]);
 
-  const startBooking = () => {
+  const availableDates = useMemo(() => Object.keys(slotsByDate).sort(), [slotsByDate]);
+
+  // Keep selectedDate valid whenever availability changes.
+  useEffect(() => {
+    if (availableDates.length === 0) {
+      if (selectedDate !== null) setSelectedDate(null);
+      return;
+    }
+    if (!selectedDate || !availableDates.includes(selectedDate)) {
+      setSelectedDate(availableDates[0]);
+    }
+  }, [availableDates, selectedDate]);
+
+  const daySlots = selectedDate ? slotsByDate[selectedDate] ?? [] : [];
+  const price = selectedPlan?.price ?? 0;
+
+  const doBooking = async () => {
     if (!isAuthenticated) {
       router.push('/(auth)/login' as any);
       return;
     }
-    if (!selectedDietician || !selectedSlot) {
-      Alert.alert('Pick a slot', 'Please choose a dietician and a time slot.');
+    if (!selectedDietician || !selectedPlan) {
+      Alert.alert('Pick a plan', 'Please choose a dietician and a consultation plan.');
       return;
     }
-    if (!phoneInput.trim()) {
-      Alert.alert('Phone required', 'Enter the number the dietician should call.');
+    if (!selectedSlot) {
+      Alert.alert('Pick a slot', 'Please choose an available time slot.');
       return;
     }
-    setSheetOpen(true);
-  };
-
-  const onPickMethod = async (method: PaymentMethod) => {
-    setSheetOpen(false);
-    if (!selectedDietician || !selectedSlot) return;
     try {
+      // Create the pending booking first, then settle it via the consult
+      // Razorpay order (server derives the amount from the booking's plan).
       const booking = await bookMutation.mutateAsync({
-        dietician_id: selectedDietician.id,
-        scheduled_at: selectedSlot,
-        phone: phoneInput.trim(),
+        dietician_slug: selectedDietician.id,
+        dietician_name: selectedDietician.name,
+        plan_code: selectedPlan.code,
+        slot_start: slotStartISO(selectedSlot),
         notes: notes.trim() || undefined,
       });
       setPendingBookingId(booking.id);
 
-      const result = await pay({ method, bookingId: booking.id });
+      const result = await pay({
+        kind: 'consult',
+        order: { consult_booking_id: booking.id },
+      });
 
       if (result.status === 'paid') {
-        queryClient.invalidateQueries({ queryKey: ['my-bookings'] });
-        queryClient.invalidateQueries({ queryKey: ['slots'] });
+        queryClient.invalidateQueries({ queryKey: consultKeys.bookings });
+        availabilityQuery.refetch();
         Alert.alert(
           'Consultation booked',
           `Your session with ${selectedDietician.name} is confirmed for ${formatSlotTime(selectedSlot)}.`,
           [{ text: 'OK', onPress: () => router.replace('/consult/my' as any) }]
         );
       } else if (result.status === 'cancelled') {
+        queryClient.invalidateQueries({ queryKey: consultKeys.bookings });
         Alert.alert(
           'Payment cancelled',
-          'Your booking is reserved as pending. Complete payment from "My consultations".'
+          'Your booking is reserved as pending. Complete payment from "My consultations".',
+          [{ text: 'OK', onPress: () => router.replace('/consult/my' as any) }]
         );
       } else if (result.error === 'payment_sdk_missing') {
-        Alert.alert('Update required', 'Card payments need an app update. Try Cash on Consult.');
+        queryClient.invalidateQueries({ queryKey: consultKeys.bookings });
+        Alert.alert(
+          'Booking reserved',
+          'Your slot is held as pending. Payments need an app update — complete it from "My consultations".',
+          [{ text: 'OK', onPress: () => router.replace('/consult/my' as any) }]
+        );
       } else {
-        Alert.alert('Payment failed', result.error || 'Please try a different method.');
+        Alert.alert('Payment failed', result.error || 'Please try again.');
       }
     } catch (e: any) {
       const code = e?.response?.data?.error;
       if (code === 'slot_taken') {
         Alert.alert('Slot taken', 'Someone just booked this slot — please pick another.');
-        slotsQuery.refetch();
+        availabilityQuery.refetch();
         setSelectedSlot(null);
       } else {
-        Alert.alert('Could not book', e?.response?.data?.detail || e?.message || 'Try again.');
+        Alert.alert('Could not book', e?.response?.data?.error || e?.message || 'Try again.');
       }
     } finally {
       setPendingBookingId(null);
@@ -172,109 +207,146 @@ export default function ConsultBookingScreen() {
             <Text style={styles.emptyText}>No dieticians available yet.</Text>
           </View>
         ) : (
-          (dieticiansQuery.data ?? []).map((doc) => (
-            <TouchableOpacity
-              key={doc.id}
-              style={[styles.docCard, selectedDietician?.id === doc.id && styles.docCardSelected]}
-              activeOpacity={0.85}
-              onPress={() => {
-                setSelectedDietician(doc);
-                setSelectedSlot(null);
-              }}
-            >
-              <View style={styles.docAvatar}>
-                {doc.photo ? (
-                  <Image source={{ uri: doc.photo }} style={styles.docPhoto} />
-                ) : (
-                  <Text style={{ fontSize: 28 }}>👩‍⚕️</Text>
-                )}
-              </View>
-              <View style={styles.docInfo}>
-                <Text style={styles.docName}>{doc.name}</Text>
-                <Text style={styles.docSpecialty}>{doc.specialty || 'Nutrition'}</Text>
-                <View style={styles.docMeta}>
-                  <Ionicons name="star" size={12} color="#F5A623" />
-                  <Text style={styles.docRating}>{doc.rating.toFixed(1)}</Text>
-                  <Text style={styles.docPrice}>· ₹{doc.fee}/session</Text>
+          (dieticiansQuery.data ?? []).map((doc) => {
+            const img = resolveMediaUrl(doc.image);
+            const selected = selectedDietician?.id === doc.id;
+            // rating is a server-computed average (Decimal) — may arrive as a
+            // string; coerce before calling toFixed to avoid a runtime crash.
+            const rating = Number(doc.rating);
+            return (
+              <TouchableOpacity
+                key={doc.id}
+                style={[styles.docCard, selected && styles.docCardSelected]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setSelectedDietician(doc);
+                  setSelectedSlot(null);
+                  setSelectedDate(null);
+                }}
+              >
+                <View style={styles.docAvatar}>
+                  {img ? (
+                    <Image source={{ uri: img }} style={styles.docPhoto} />
+                  ) : (
+                    <Text style={{ fontSize: 28 }}>👩‍⚕️</Text>
+                  )}
                 </View>
-              </View>
-              {selectedDietician?.id === doc.id && (
-                <Ionicons name="checkmark-circle" size={24} color="#4B8E3D" style={{ marginLeft: 8 }} />
-              )}
-            </TouchableOpacity>
-          ))
+                <View style={styles.docInfo}>
+                  <Text style={styles.docName}>{doc.name}</Text>
+                  <Text style={styles.docSpecialty}>{doc.specialty || 'Nutrition'}</Text>
+                  <View style={styles.docMeta}>
+                    <Ionicons name="star" size={12} color="#F5A623" />
+                    <Text style={styles.docRating}>
+                      {Number.isFinite(rating) ? rating.toFixed(1) : '—'}
+                    </Text>
+                    {!!doc.experience && <Text style={styles.docPrice}>· {doc.experience}</Text>}
+                  </View>
+                </View>
+                {selected && (
+                  <Ionicons name="checkmark-circle" size={24} color="#4B8E3D" style={{ marginLeft: 8 }} />
+                )}
+              </TouchableOpacity>
+            );
+          })
         )}
 
         {selectedDietician && (
           <>
-            <Text style={[styles.sectionTitle, { marginTop: 28 }]}>Pick a date</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.dateRow}>
-                {dates.map((d, idx) => (
-                  <TouchableOpacity
-                    key={d}
-                    style={[styles.dateChip, date === d && styles.dateChipSelected]}
-                    onPress={() => {
-                      setDate(d);
-                      setSelectedSlot(null);
-                    }}
-                  >
-                    <Text style={[styles.dateChipText, date === d && styles.dateChipTextSelected]}>
-                      {labelForDate(d, idx)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Pick a time</Text>
-            {slotsQuery.isLoading ? (
+            <Text style={[styles.sectionTitle, { marginTop: 28 }]}>Choose a plan</Text>
+            {plansQuery.isLoading ? (
               <ActivityIndicator color="#4B8E3D" style={{ marginVertical: 12 }} />
-            ) : slotsQuery.data && slotsQuery.data.slots.length > 0 ? (
-              <View style={styles.slotsGrid}>
-                {slotsQuery.data.slots.map((s) => {
-                  const selected = selectedSlot === s.scheduled_at;
-                  return (
-                    <TouchableOpacity
-                      key={s.scheduled_at}
-                      style={[
-                        styles.slotChip,
-                        !s.available && styles.slotChipDisabled,
-                        selected && styles.slotChipSelected,
-                      ]}
-                      disabled={!s.available}
-                      onPress={() => setSelectedSlot(s.scheduled_at)}
-                    >
-                      <Text
-                        style={[
-                          styles.slotText,
-                          !s.available && styles.slotTextDisabled,
-                          selected && styles.slotTextSelected,
-                        ]}
-                      >
-                        {formatSlotTime(s.scheduled_at)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+            ) : (plansQuery.data ?? []).length === 0 ? (
+              <Text style={styles.muted}>No consultation plans available.</Text>
             ) : (
-              <Text style={styles.muted}>No slots available for this day.</Text>
+              (plansQuery.data ?? []).map((plan) => {
+                const selected = selectedPlan?.code === plan.code;
+                return (
+                  <TouchableOpacity
+                    key={plan.code}
+                    style={[styles.planCard, selected && styles.planCardSelected]}
+                    activeOpacity={0.85}
+                    onPress={() => setSelectedPlan(plan)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.planTitleRow}>
+                        <Text style={styles.planTitle}>{plan.title}</Text>
+                        {plan.recommended && (
+                          <View style={styles.recommendBadge}>
+                            <Text style={styles.recommendText}>Recommended</Text>
+                          </View>
+                        )}
+                      </View>
+                      {plan.durationWeeks > 0 && (
+                        <Text style={styles.planMeta}>{plan.durationWeeks} week plan</Text>
+                      )}
+                      {!!plan.discountLabel && (
+                        <Text style={styles.planDiscount}>{plan.discountLabel}</Text>
+                      )}
+                    </View>
+                    <View style={styles.planRight}>
+                      <Text style={styles.planPrice}>₹{plan.price}</Text>
+                      <Ionicons
+                        name={selected ? 'radio-button-on' : 'radio-button-off'}
+                        size={20}
+                        color={selected ? '#4B8E3D' : '#9CA3AF'}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
             )}
 
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Phone</Text>
-            <Text style={styles.muted}>The dietician will call you on this number.</Text>
-            <TextInput
-              style={styles.textInput}
-              keyboardType="phone-pad"
-              placeholder="+91 9876543210"
-              placeholderTextColor="#9CA3AF"
-              value={phoneInput}
-              onChangeText={setPhoneInput}
-              maxLength={20}
-            />
+            <Text style={[styles.sectionTitle, { marginTop: 28 }]}>Pick a date</Text>
+            {availabilityQuery.isLoading ? (
+              <ActivityIndicator color="#4B8E3D" style={{ marginVertical: 12 }} />
+            ) : availableDates.length === 0 ? (
+              <Text style={styles.muted}>No availability in the next 30 days.</Text>
+            ) : (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.dateRow}>
+                    {availableDates.map((d) => (
+                      <TouchableOpacity
+                        key={d}
+                        style={[styles.dateChip, selectedDate === d && styles.dateChipSelected]}
+                        onPress={() => {
+                          setSelectedDate(d);
+                          setSelectedSlot(null);
+                        }}
+                      >
+                        <Text style={[styles.dateChipText, selectedDate === d && styles.dateChipTextSelected]}>
+                          {labelForDate(d)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
 
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Notes (optional)</Text>
+                <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Pick a time</Text>
+                {daySlots.length > 0 ? (
+                  <View style={styles.slotsGrid}>
+                    {daySlots.map((s) => {
+                      const selected = selectedSlot?.id === s.id;
+                      return (
+                        <TouchableOpacity
+                          key={s.id}
+                          style={[styles.slotChip, selected && styles.slotChipSelected]}
+                          onPress={() => setSelectedSlot(s)}
+                        >
+                          <Text style={[styles.slotText, selected && styles.slotTextSelected]}>
+                            {formatSlotTime(s)}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={styles.muted}>No slots available for this day.</Text>
+                )}
+              </>
+            )}
+
+            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Notes (optional)</Text>
             <TextInput
               style={[styles.textInput, styles.notesInput]}
               placeholder="Goals, medical history, allergies — anything to help your dietician"
@@ -295,51 +367,21 @@ export default function ConsultBookingScreen() {
         <TouchableOpacity
           style={[
             styles.bookBtn,
-            (!selectedDietician || !selectedSlot || busy) && styles.bookBtnDisabled,
+            (!selectedDietician || !selectedPlan || !selectedSlot || busy) && styles.bookBtnDisabled,
           ]}
-          onPress={startBooking}
-          disabled={!selectedDietician || !selectedSlot || busy}
+          onPress={doBooking}
+          disabled={!selectedDietician || !selectedPlan || !selectedSlot || busy}
           activeOpacity={0.9}
         >
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.bookBtnText}>
-              Book{selectedDietician ? ` · ₹${selectedDietician.fee}` : ''}
+              Book{selectedPlan ? ` · ₹${price}` : ''}
             </Text>
           )}
         </TouchableOpacity>
       </View>
-
-      <Modal visible={sheetOpen} animationType="slide" transparent onRequestClose={() => setSheetOpen(false)}>
-        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setSheetOpen(false)}>
-          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Choose payment method</Text>
-            <Text style={styles.sheetSub}>
-              {selectedDietician ? `₹${selectedDietician.fee} • ${selectedDietician.name}` : ''}
-            </Text>
-            {PAYMENT_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.method}
-                style={styles.methodRow}
-                activeOpacity={0.85}
-                onPress={() => onPickMethod(opt.method)}
-              >
-                <Ionicons name={opt.icon} size={26} color="#0B262F" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.methodLabel}>{opt.label}</Text>
-                  <Text style={styles.methodSub}>{opt.sub}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#6C6C6C" />
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity onPress={() => setSheetOpen(false)} style={styles.sheetCancel}>
-              <Text style={styles.sheetCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }
@@ -402,6 +444,36 @@ const styles = StyleSheet.create({
   docRating: { fontSize: 12, fontWeight: '600', color: '#111' },
   docPrice: { fontSize: 12, color: '#6B7280' },
 
+  planCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  planCardSelected: { borderColor: '#4B8E3D', backgroundColor: '#F0FFF4' },
+  planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  planTitle: { fontSize: 15, fontWeight: '600', color: '#111' },
+  planMeta: { fontSize: 13, color: '#6B7280', marginTop: 4 },
+  planDiscount: { fontSize: 12, color: '#4B8E3D', fontWeight: '600', marginTop: 4 },
+  planRight: { alignItems: 'flex-end', gap: 6 },
+  planPrice: { fontSize: 16, fontWeight: '700', color: '#0B262F' },
+  recommendBadge: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  recommendText: { fontSize: 11, fontWeight: '600', color: '#2C921D' },
+
   dateRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
   dateChip: {
     paddingHorizontal: 14,
@@ -425,10 +497,8 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   slotChipSelected: { backgroundColor: '#4B8E3D', borderColor: '#4B8E3D' },
-  slotChipDisabled: { backgroundColor: '#F3F4F6', borderColor: '#F3F4F6' },
   slotText: { fontSize: 13, fontWeight: '500', color: '#374151' },
   slotTextSelected: { color: '#fff' },
-  slotTextDisabled: { color: '#9CA3AF', textDecorationLine: 'line-through' },
 
   textInput: {
     backgroundColor: '#fff',

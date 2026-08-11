@@ -68,13 +68,6 @@ export default function SubscriptionScreen() {
       Alert.alert('Could not resume', e?.response?.data?.error || 'Try again later.'),
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: (id: number) => subscriptionApi.cancel(id),
-    onSuccess: invalidate,
-    onError: (e: any) =>
-      Alert.alert('Could not cancel', e?.response?.data?.error || 'Try again later.'),
-  });
-
   const askPause = (sub: ActiveSubscription) => {
     Alert.alert(
       'Pause subscription',
@@ -89,21 +82,6 @@ export default function SubscriptionScreen() {
               hold_start_date: todayPlus(1),
               hold_end_date: todayPlus(7),
             }),
-        },
-      ]
-    );
-  };
-
-  const askCancel = (sub: ActiveSubscription) => {
-    Alert.alert(
-      'Cancel subscription?',
-      'You will stop receiving deliveries. This cannot be undone.',
-      [
-        { text: 'Keep', style: 'cancel' },
-        {
-          text: 'Cancel subscription',
-          style: 'destructive',
-          onPress: () => cancelMutation.mutate(sub.id),
         },
       ]
     );
@@ -161,8 +139,7 @@ export default function SubscriptionScreen() {
             const periodName = pickName(sub.subscription_period);
             const pendingThis =
               (pauseMutation.isPending && pauseMutation.variables?.id === sub.id) ||
-              (resumeMutation.isPending && resumeMutation.variables === sub.id) ||
-              (cancelMutation.isPending && cancelMutation.variables === sub.id);
+              (resumeMutation.isPending && resumeMutation.variables === sub.id);
 
             return (
               <View key={sub.id} style={styles.card}>
@@ -212,17 +189,13 @@ export default function SubscriptionScreen() {
                       disabled={pendingThis}
                       onPress={() => askPause(sub)}
                     >
-                      <Text style={styles.actionSecondaryText}>Pause 7 days</Text>
+                      {pendingThis ? (
+                        <ActivityIndicator color="#1E7F3E" />
+                      ) : (
+                        <Text style={styles.actionSecondaryText}>Pause 7 days</Text>
+                      )}
                     </TouchableOpacity>
                   )}
-
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.actionDanger]}
-                    disabled={pendingThis}
-                    onPress={() => askCancel(sub)}
-                  >
-                    <Text style={styles.actionDangerText}>Cancel</Text>
-                  </TouchableOpacity>
                 </View>
               </View>
             );

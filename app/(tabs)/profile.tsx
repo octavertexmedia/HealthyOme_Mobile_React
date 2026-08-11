@@ -93,7 +93,7 @@ export default function ProfileScreen() {
             <TouchableOpacity
               activeOpacity={0.9}
               style={styles.subscriptionCardShadow}
-              onPress={() => router.push('/subscription/active' as any)}
+              onPress={() => router.push('/subscription' as any)}
             >
               <LinearGradient
                 colors={['#2E8B1D', '#1E6F3E']}

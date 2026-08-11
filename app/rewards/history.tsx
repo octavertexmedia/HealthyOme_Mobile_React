@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { rewardsApi, type RewardTransaction } from '../../src/features/rewards/api/rewards.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 
-const POSITIVE: RewardTransaction['transaction_type'][] = ['earned', 'bonus'];
+const POSITIVE: RewardTransaction['transaction_type'][] = ['earned'];
 
 function formatDate(iso: string): string {
   try {
@@ -28,12 +28,8 @@ function titleFor(t: RewardTransaction): string {
   switch (t.transaction_type) {
     case 'earned':
       return 'Points earned';
-    case 'bonus':
-      return 'Bonus points';
-    case 'redeemed':
-      return 'Reward redeemed';
-    case 'expired':
-      return 'Points expired';
+    case 'spent':
+      return 'Points spent';
     default:
       return 'Adjustment';
   }
@@ -94,6 +90,11 @@ export default function RewardsHistoryScreen() {
           </View>
         ) : historyQuery.isLoading ? (
           <ActivityIndicator color="#4B8E3D" style={{ marginVertical: 24 }} />
+        ) : historyQuery.isError ? (
+          <View style={styles.empty}>
+            <Ionicons name="cloud-offline-outline" size={28} color="#9CA3AF" />
+            <Text style={styles.emptyText}>Couldn&apos;t load your history. Pull to refresh.</Text>
+          </View>
         ) : history.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="time-outline" size={28} color="#9CA3AF" />
@@ -102,7 +103,7 @@ export default function RewardsHistoryScreen() {
         ) : (
           history.map((item, idx) => {
             const positive = POSITIVE.includes(item.transaction_type);
-            const sign = positive ? '+' : item.points > 0 ? '-' : '';
+            const sign = positive ? '+' : item.points === 0 ? '' : '-';
             const tone = positive ? '#4B8E3D' : '#EF4444';
             const bg = positive ? '#E8F5E9' : '#FEE2E2';
             return (

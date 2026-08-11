@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
+import { useCheckoutQuote } from '../../src/features/cart/hooks/useCheckoutQuote';
 import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 import EmptyState from '../../src/shared/components/EmptyState';
@@ -15,9 +16,16 @@ export default function CartScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { items, totalItems, totalPrice, updateQuantity, removeItem, clearCart } = useCartStore();
+  const { data: quote } = useCheckoutQuote();
 
-  const deliveryFee = totalPrice > 200 ? 0 : 30;
-  const grandTotal = totalPrice + deliveryFee;
+  // Prefer server-authoritative totals (SiteSettings thresholds + payable_total).
+  // Fall back to a local estimate while logged-out / loading / bowl-only cart.
+  const freeShippingThreshold = quote?.free_shipping_threshold ?? 200;
+  const subtotal = quote?.subtotal ?? totalPrice;
+  const deliveryFee =
+    quote?.shipping ?? (totalPrice > freeShippingThreshold ? 0 : 30);
+  const discount = quote?.discount ?? 0;
+  const grandTotal = quote?.payable_total ?? subtotal + deliveryFee;
 
   if (items.length === 0) {
     return (
@@ -90,16 +98,22 @@ export default function CartScreen() {
           <View style={styles.summarySection}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>{formatPrice(totalPrice)}</Text>
+              <Text style={styles.summaryValue}>{formatPrice(subtotal)}</Text>
             </View>
+            {discount > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Discount</Text>
+                <Text style={[styles.summaryValue, styles.freeText]}>−{formatPrice(discount)}</Text>
+              </View>
+            )}
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Delivery</Text>
               <Text style={[styles.summaryValue, deliveryFee === 0 && styles.freeText]}>
                 {deliveryFee === 0 ? 'FREE' : formatPrice(deliveryFee)}
               </Text>
             </View>
-            {deliveryFee > 0 && (
-              <Text style={styles.freeDeliveryHint}>Add {formatPrice(200 - totalPrice)} more for free delivery</Text>
+            {deliveryFee > 0 && subtotal < freeShippingThreshold && (
+              <Text style={styles.freeDeliveryHint}>Add {formatPrice(freeShippingThreshold - subtotal)} more for free delivery</Text>
             )}
             <View style={[styles.summaryRow, styles.totalRow]}>
               <Text style={styles.totalLabel}>Total</Text>

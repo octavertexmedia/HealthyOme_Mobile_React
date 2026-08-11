@@ -73,3 +73,19 @@ export const useSiteSettings = () => {
     staleTime: 60 * 60 * 1000,
   });
 };
+
+export const useHomeLayout = () => {
+  return useQuery({
+    queryKey: ['homeLayout'],
+    queryFn: mealsApi.getHomeLayout,
+    staleTime: 15 * 60 * 1000,
+  });
+};
+
+export const useMealCategories = () => {
+  return useQuery({
+    queryKey: ['mealCategories'],
+    queryFn: mealsApi.getMealCategories,
+    staleTime: 15 * 60 * 1000,
+  });
+};

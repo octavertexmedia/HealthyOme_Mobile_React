@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { zustandMMKVStorage } from '../../../shared/storage/mmkv';
+import { zustandStorage } from '../../../shared/storage/mmkv';
 import { tokenStore } from '../../../shared/storage/tokens';
 import { authApi } from '../api/auth.api';
 import { unregisterPushToken } from '../../notifications/registerPushToken';
@@ -61,7 +61,7 @@ export const useAuthStore = create<AuthStore>()(
     }),
     {
       name: 'auth-store',
-      storage: createJSONStorage(() => zustandMMKVStorage),
+      storage: createJSONStorage(() => zustandStorage),
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,

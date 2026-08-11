@@ -11,6 +11,7 @@ import { reviewsApi, type MealReview } from '../../src/features/catalog/api/revi
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { cartApi } from '../../src/features/cart/api/cart.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import { useIsFavourite, useToggleFavourite } from '../../src/features/favourites/hooks/useFavourites';
 import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 import Loading from '../../src/shared/components/Loading';
@@ -28,6 +29,9 @@ export default function MealDetailScreen() {
   const addItem = useCartStore((s) => s.addItem);
   const hydrateFromServer = useCartStore((s) => s.hydrateFromServer);
   const [qty, setQty] = React.useState(1);
+
+  const isFavourite = useIsFavourite(mealId);
+  const toggleFavourite = useToggleFavourite();
 
   const reviewsQuery = useQuery<MealReview[]>({
     queryKey: ['reviews', 'meal', mealId],
@@ -73,13 +77,37 @@ export default function MealDetailScreen() {
           <TouchableOpacity style={[styles.backBtn, { top: spacing.sm }]} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={22} color={colors.text.primary} />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.favBtn, { top: spacing.sm }]}
+            onPress={() => {
+              if (!isAuthenticated) {
+                router.push('/(auth)/login');
+                return;
+              }
+              toggleFavourite.mutate({
+                mealItemId: meal.id,
+                snapshot: {
+                  name: meal.name,
+                  image: meal.image,
+                  price: typeof meal.price === 'string' ? parseFloat(meal.price) : meal.price ?? null,
+                  calories: meal.calories,
+                },
+              });
+            }}
+          >
+            <Ionicons
+              name={isFavourite ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFavourite ? colors.status.error : colors.text.primary}
+            />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
           <Text style={styles.category}>{catName}</Text>
           <Text style={styles.name}>{meal.name}</Text>
 
-          {meal.rating && (
+          {!!meal.rating && (
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={16} color="#FFD700" />
               <Text style={styles.ratingText}>{Number(meal.rating).toFixed(1)}</Text>
@@ -87,16 +115,16 @@ export default function MealDetailScreen() {
           )}
 
           <Text style={styles.price}>{formatPrice(price)}</Text>
-          {meal.original_price && Number(meal.original_price) > price && (
+          {!!meal.original_price && Number(meal.original_price) > price && (
             <Text style={styles.originalPrice}>{formatPrice(meal.original_price)}</Text>
           )}
 
-          {meal.description && (
+          {meal.description ? (
             <View style={styles.descSection}>
               <Text style={styles.sectionTitle}>About this meal</Text>
               <Text style={styles.description}>{meal.description}</Text>
             </View>
-          )}
+          ) : null}
 
           {/* Nutrition */}
           <Text style={styles.sectionTitle}>Nutrition Info</Text>
@@ -182,6 +210,10 @@ const styles = StyleSheet.create({
   imageFallback: { width: '100%', height: '100%', backgroundColor: colors.divider, justifyContent: 'center', alignItems: 'center' },
   backBtn: {
     position: 'absolute', left: spacing.lg, width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.9)', justifyContent: 'center', alignItems: 'center', ...shadows.md,
+  },
+  favBtn: {
+    position: 'absolute', right: spacing.lg, width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.9)', justifyContent: 'center', alignItems: 'center', ...shadows.md,
   },
   content: { padding: spacing.xl },

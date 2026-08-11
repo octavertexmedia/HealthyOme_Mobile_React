@@ -8,8 +8,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { addressesApi, type UserAddress, type CreateAddressPayload } from '../../src/features/addresses/api/addresses.api';
+import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { colors } from '../../src/shared/theme';
 import EmptyState from '../../src/shared/components/EmptyState';
+import DeliveryAreaPicker, { type DeliveryAreaSelection } from '../../src/features/delivery-areas/components/DeliveryAreaPicker';
 
 const ADDRESSES_KEY = ['addresses'];
 
@@ -27,11 +29,16 @@ export default function AddressesScreen() {
     contact_number: '',
     delivery_area_id: undefined,
   });
+  const [areaName, setAreaName] = useState<string>('');
+  const [showAreaPicker, setShowAreaPicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const addressesQuery = useQuery({
     queryKey: ADDRESSES_KEY,
     queryFn: addressesApi.list,
+    enabled: isAuthenticated,
   });
 
   const createMutation = useMutation({
@@ -82,6 +89,7 @@ export default function AddressesScreen() {
   const openCreate = () => {
     setEditingId(null);
     setForm({ label: '', address: '', landmark: '', contact_number: '', delivery_area_id: undefined });
+    setAreaName('');
     setShowModal(true);
   };
 
@@ -94,7 +102,13 @@ export default function AddressesScreen() {
       contact_number: a.contact_number,
       delivery_area_id: a.delivery_area?.id,
     });
+    setAreaName(a.delivery_area?.name ?? '');
     setShowModal(true);
+  };
+
+  const handleAreaSelect = (area: DeliveryAreaSelection) => {
+    setForm((prev) => ({ ...prev, delivery_area_id: area.id }));
+    setAreaName(area.name);
   };
 
   const closeModal = () => {
@@ -143,6 +157,14 @@ export default function AddressesScreen() {
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={colors.primary} />
           </View>
+        ) : addressesQuery.isError ? (
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn't load addresses"
+            description="Please check your connection and try again."
+            actionLabel="Retry"
+            onAction={() => addressesQuery.refetch()}
+          />
         ) : addresses.length === 0 ? (
           <EmptyState
             icon="location-outline"
@@ -248,14 +270,20 @@ export default function AddressesScreen() {
               value={form.contact_number || ''}
               onChangeText={(v) => setForm({ ...form, contact_number: v })}
             />
-            <TextInput
-              style={styles.input}
-              placeholder="Delivery area ID (required)"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="number-pad"
-              value={form.delivery_area_id?.toString() ?? ''}
-              onChangeText={(v) => setForm({ ...form, delivery_area_id: v ? parseInt(v, 10) : undefined })}
-            />
+            <TouchableOpacity
+              style={styles.selectInput}
+              onPress={() => setShowAreaPicker(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="location-outline" size={18} color="#6B7280" />
+              <Text
+                style={[styles.selectInputText, !areaName && styles.selectInputPlaceholder]}
+                numberOfLines={1}
+              >
+                {areaName || 'Select delivery area'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.addBtn, { marginTop: 12, opacity: saving ? 0.6 : 1 }]}
@@ -271,6 +299,13 @@ export default function AddressesScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <DeliveryAreaPicker
+        visible={showAreaPicker}
+        onClose={() => setShowAreaPicker(false)}
+        onSelect={handleAreaSelect}
+        selectedId={form.delivery_area_id ?? null}
+      />
     </View>
   );
 }
@@ -330,4 +365,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
     paddingHorizontal: 16, height: 50, marginBottom: 12, fontSize: 15,
   },
+  selectInput: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+    paddingHorizontal: 16, height: 50, marginBottom: 12,
+  },
+  selectInputText: { flex: 1, fontSize: 15, color: '#111' },
+  selectInputPlaceholder: { color: '#9CA3AF' },
 });

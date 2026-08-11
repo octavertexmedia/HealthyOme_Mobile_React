@@ -1,5 +1,12 @@
 import apiClient from '../../../shared/api/client';
-import type { MealItem, HeroSlide, SiteSettings, MealPlanType } from '../types/meal.types';
+import type {
+  MealItem,
+  HeroSlide,
+  SiteSettings,
+  MealPlanType,
+  HomeLayout,
+  MealCategory,
+} from '../types/meal.types';
 
 interface PaginatedResponse<T> {
   count: number;
@@ -77,6 +84,17 @@ export const mealsApi = {
   getSiteSettings: async (): Promise<SiteSettings> => {
     const response = await apiClient.get<SiteSettings>('/site-settings/active/');
     return response.data;
+  },
+
+  getHomeLayout: async (): Promise<HomeLayout> => {
+    const response = await apiClient.get<HomeLayout>('/home-layout/');
+    return response.data;
+  },
+
+  getMealCategories: async (): Promise<MealCategory[]> => {
+    const response = await apiClient.get<PaginatedResponse<MealCategory> | MealCategory[]>('/meal-categories/');
+    if (Array.isArray(response.data)) return response.data;
+    return response.data.results || [];
   },
 
   getDashboardStats: async () => {

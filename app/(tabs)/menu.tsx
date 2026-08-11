@@ -1,14 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
   StyleSheet, Image, Dimensions, RefreshControl, Modal, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useInfiniteMeals } from '../../src/features/catalog/hooks/useMeals';
+import { useInfiniteMeals, useMealCategories } from '../../src/features/catalog/hooks/useMeals';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { colors, spacing, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
@@ -19,33 +19,37 @@ import type { MealItem } from '../../src/features/catalog/types/meal.types';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - spacing.xl * 2 - spacing.md) / 2;
 
-const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'bowl', label: 'Bowl' },
-  { id: 'soups', label: 'Soups' },
-  { id: 'salads', label: 'Salads' },
-  { id: 'smoothie', label: 'Smoothie' },
-];
+// 'all' sentinel = no server-side category filter.
+const ALL_CATEGORY = 'all' as const;
 
 export default function MenuScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ category?: string }>();
   const addItem = useCartStore((s) => s.addItem);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const cartItems = useCartStore((s) => s.items);
   const totalItems = useCartStore((s) => s.totalItems);
 
+  const { data: categories } = useMealCategories();
+
   const [search, setSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
+  // Selected category id (number) or 'all'. Seeded from the incoming route param
+  // when Home navigates in with a category.
+  const [activeCategory, setActiveCategory] = useState<number | typeof ALL_CATEGORY>(
+    params.category ? Number(params.category) : ALL_CATEGORY,
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MealItem | null>(null);
 
+  // Keep the active category in sync when Home navigates in with a category param
+  // (the tab may already be mounted, so the useState initializer won't re-run).
+  useEffect(() => {
+    if (params.category) setActiveCategory(Number(params.category));
+  }, [params.category]);
+
   // Server search runs only after the user pauses typing for 300ms.
   const debouncedSearch = useDebounce(search, 300);
-  // Filter pills add an extra search term so the server filters.
-  // (Real category-id filters need a categories endpoint mapping; that's a follow-up.)
-  const effectiveSearch =
-    activeFilter === 'all' ? debouncedSearch : `${debouncedSearch} ${activeFilter}`.trim();
 
   const {
     data,
@@ -54,7 +58,10 @@ export default function MenuScreen() {
     hasNextPage,
     fetchNextPage,
     refetch,
-  } = useInfiniteMeals({ search: effectiveSearch || undefined });
+  } = useInfiniteMeals({
+    search: debouncedSearch.trim() || undefined,
+    category: activeCategory === ALL_CATEGORY ? undefined : activeCategory,
+  });
 
   const meals = useMemo<MealItem[]>(() => {
     if (!data) return [];
@@ -151,14 +158,28 @@ export default function MenuScreen() {
     if (!selectedItem) return null;
     const price = typeof selectedItem.price === 'string' ? parseFloat(selectedItem.price) : selectedItem.price || 0;
     const qty = getCartQty(selectedItem.id);
+    const pricing = selectedItem.pricing;
 
+    // Decimal fields arrive from the API as strings; coerce and drop empties.
+    const num = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = typeof v === 'string' ? parseFloat(v) : (v as number);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const calories = num(pricing?.calories ?? selectedItem.calories);
     const macros = [
-      { label: 'Calories', value: selectedItem.calories ? `${selectedItem.calories} kcal` : '289 kcal', iconName: 'flame-outline', color: '#ff6b35' },
-      { label: 'Protein', value: '21 g', iconName: 'barbell-outline', color: '#8b5a2b' },
-      { label: 'Carbs', value: '16 g', iconName: 'nutrition-outline', color: '#1e6f3e' },
-      { label: 'Fats', value: '14 g', iconName: 'water-outline', color: '#0099a3' },
-      { label: 'Fiber', value: '8 g', iconName: 'leaf-outline', color: '#2c921d' },
-    ];
+      { label: 'Calories', value: calories, unit: ' kcal', iconName: 'flame-outline', color: '#ff6b35' },
+      { label: 'Protein', value: num(pricing?.protein ?? selectedItem.protein), unit: ' g', iconName: 'barbell-outline', color: '#8b5a2b' },
+      { label: 'Carbs', value: num(pricing?.carbs ?? selectedItem.carbs), unit: ' g', iconName: 'nutrition-outline', color: '#1e6f3e' },
+      { label: 'Fats', value: num(pricing?.fats ?? selectedItem.fats), unit: ' g', iconName: 'water-outline', color: '#0099a3' },
+      { label: 'Fiber', value: num(pricing?.fiber ?? selectedItem.fiber), unit: ' g', iconName: 'leaf-outline', color: '#2c921d' },
+    ].filter((m) => m.value !== null);
+
+    const rating = num(selectedItem.rating ?? pricing?.rating);
+    const totalSold = num(pricing?.total_sold);
+    const originalPrice = num(selectedItem.original_price ?? pricing?.original_price);
+    const showStrike = originalPrice !== null && originalPrice > price;
 
     return (
       <Modal visible animationType="fade" transparent onRequestClose={() => setSelectedItem(null)}>
@@ -198,16 +219,26 @@ export default function MenuScreen() {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>{selectedItem.name}</Text>
 
-              <View style={styles.modalRatingRow}>
-                <Text>⭐</Text>
-                <Text style={styles.modalRating}>{selectedItem.rating ? Number(selectedItem.rating).toFixed(1) : '4.9'}</Text>
-                <Text style={styles.modalSold}>(156 sold)</Text>
-              </View>
+              {(rating !== null || (totalSold !== null && totalSold > 0)) && (
+                <View style={styles.modalRatingRow}>
+                  {rating !== null && (
+                    <>
+                      <Text>⭐</Text>
+                      <Text style={styles.modalRating}>{rating.toFixed(1)}</Text>
+                    </>
+                  )}
+                  {totalSold !== null && totalSold > 0 && (
+                    <Text style={styles.modalSold}>{totalSold} sold</Text>
+                  )}
+                </View>
+              )}
 
               {/* Price + Cart */}
               <View style={styles.modalPriceRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.modalStrikePrice}>₹419.00</Text>
+                  {showStrike && (
+                    <Text style={styles.modalStrikePrice}>{formatPrice(originalPrice)}</Text>
+                  )}
                   <Text style={styles.modalPrice}>{formatPrice(price)}</Text>
                 </View>
 
@@ -238,26 +269,27 @@ export default function MenuScreen() {
               </View>
 
               {/* Description */}
-              <Text style={styles.modalDesc}>
-                {selectedItem.description ||
-                  'Crisp romaine hearts topped with succulent pulled chicken, crunchy herb-seasoned croutons, and shavings of aged Parmesan.'}
-              </Text>
+              {selectedItem.description ? (
+                <Text style={styles.modalDesc}>{selectedItem.description}</Text>
+              ) : null}
 
-              {/* Macros */}
-              <View style={styles.macrosCard}>
-                <Text style={styles.macrosTitle}>Macros</Text>
-                <View style={styles.macrosRow}>
-                  {macros.map((m) => (
-                    <View key={m.label} style={styles.macroItem}>
-                      <View style={styles.macroIcon}>
-                        <Ionicons name={m.iconName as any} size={20} color={m.color} />
+              {/* Macros — only the fields the API actually returned */}
+              {macros.length > 0 && (
+                <View style={styles.macrosCard}>
+                  <Text style={styles.macrosTitle}>Macros</Text>
+                  <View style={styles.macrosRow}>
+                    {macros.map((m) => (
+                      <View key={m.label} style={styles.macroItem}>
+                        <View style={styles.macroIcon}>
+                          <Ionicons name={m.iconName as any} size={20} color={m.color} />
+                        </View>
+                        <Text style={styles.macroLabel}>{m.label}</Text>
+                        <Text style={styles.macroValue}>{m.value}{m.unit}</Text>
                       </View>
-                      <Text style={styles.macroLabel}>{m.label}</Text>
-                      <Text style={styles.macroValue}>{m.value}</Text>
-                    </View>
-                  ))}
+                    ))}
+                  </View>
                 </View>
-              </View>
+              )}
             </View>
             </ScrollView>
           </View>
@@ -300,27 +332,31 @@ export default function MenuScreen() {
             <TouchableOpacity onPress={() => setSearch('')}>
               <Ionicons name="close-circle" size={18} color="#9CA3AF" />
             </TouchableOpacity>
-          ) : (
-            <TouchableOpacity>
-              <Ionicons name="mic" size={18} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
+          ) : null}
         </View>
 
-        {/* Filter Pills */}
+        {/* Filter Pills — real browse categories from the CMS */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
         >
-          {FILTERS.map((f) => (
+          <TouchableOpacity
+            style={[styles.filterPill, activeCategory === ALL_CATEGORY && styles.filterPillActive]}
+            onPress={() => setActiveCategory(ALL_CATEGORY)}
+          >
+            <Text style={[styles.filterText, activeCategory === ALL_CATEGORY && styles.filterTextActive]}>
+              All
+            </Text>
+          </TouchableOpacity>
+          {categories?.map((cat) => (
             <TouchableOpacity
-              key={f.id}
-              style={[styles.filterPill, activeFilter === f.id && styles.filterPillActive]}
-              onPress={() => setActiveFilter(f.id)}
+              key={cat.id}
+              style={[styles.filterPill, activeCategory === cat.id && styles.filterPillActive]}
+              onPress={() => setActiveCategory(cat.id)}
             >
-              <Text style={[styles.filterText, activeFilter === f.id && styles.filterTextActive]}>
-                {f.label}
+              <Text style={[styles.filterText, activeCategory === cat.id && styles.filterTextActive]}>
+                {cat.name}
               </Text>
             </TouchableOpacity>
           ))}

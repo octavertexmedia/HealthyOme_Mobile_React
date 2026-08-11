@@ -3,31 +3,29 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { rewardsApi, type Reward } from '../../src/features/rewards/api/rewards.api';
+import { useAvailableRewards, useUserPoints } from '../../src/features/rewards/hooks/useRewards';
+import { useMyReferral } from '../../src/features/rewards/hooks/useReferral';
+import { ReferralPanel } from '../../src/features/rewards/components/ReferralPanel';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 
-const EARN_METHODS = [
+// Neutral, backend-agnostic explainer. The rewards contract does not expose
+// per-action point values for purchases/streaks, so we deliberately avoid
+// fabricating numbers here. Real referral point values come from /referrals/me/.
+const EARN_METHODS: { icon: React.ComponentProps<typeof Ionicons>['name']; title: string; subtitle: string }[] = [
   {
-    icon: 'bag-handle-outline' as const,
-    title: 'Make a Purchase',
-    subtitle: 'Earn 25 point for every ₹100 spent',
-    points: '+25',
+    icon: 'bag-handle-outline',
+    title: 'Order your favourites',
+    subtitle: 'Collect points every time you place an order',
   },
   {
-    icon: 'people-outline' as const,
-    title: 'Refer a friend',
-    subtitle: 'Get 200 points when they join',
-    points: '+200',
-  },
-  {
-    icon: 'flame-outline' as const,
-    title: 'Daily Streak',
-    subtitle: 'Get 25 points on 7 day continuous buy',
-    points: '+25',
+    icon: 'gift-outline',
+    title: 'Redeem for perks',
+    subtitle: 'Trade points for free meals, discounts and cashback',
   },
 ];
 
@@ -37,15 +35,9 @@ export default function RewardsScreen() {
   const queryClient = useQueryClient();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const { data: rewards } = useQuery({
-    queryKey: ['rewards'],
-    queryFn: rewardsApi.getRewards,
-  });
-  const { data: userPointsData } = useQuery<number>({
-    queryKey: ['rewards', 'points'],
-    queryFn: rewardsApi.getUserPoints,
-    enabled: isAuthenticated,
-  });
+  const { data: rewards } = useAvailableRewards();
+  const { data: userPointsData } = useUserPoints(isAuthenticated);
+  const { data: referral } = useMyReferral(isAuthenticated);
 
   const userPoints = userPointsData ?? 0;
   const rewardsList = rewards || [];
@@ -201,9 +193,19 @@ export default function RewardsScreen() {
           ))}
         </ScrollView>
 
-        {/* ─── EARN MORE POINTS ─── */}
+        {/* ─── REFER A FRIEND (backend-driven) ─── */}
+        {isAuthenticated && referral?.program_enabled ? (
+          <>
+            <View style={[styles.sectionHeader, { marginTop: 24 }]}>
+              <Text style={styles.sectionTitle}>Refer &amp; earn</Text>
+            </View>
+            <ReferralPanel referral={referral} />
+          </>
+        ) : null}
+
+        {/* ─── HOW TO EARN (neutral explainer, no fabricated point values) ─── */}
         <View style={[styles.sectionHeader, { marginTop: 24 }]}>
-          <Text style={styles.sectionTitle}>Earn more points</Text>
+          <Text style={styles.sectionTitle}>How points work</Text>
         </View>
 
         <View style={styles.earnCard}>
@@ -216,12 +218,11 @@ export default function RewardsScreen() {
                 <View style={styles.earnIcon}>
                   <Ionicons name={method.icon} size={20} color="#4B8E3D" />
                 </View>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.earnTitle}>{method.title}</Text>
                   <Text style={styles.earnSubtitle}>{method.subtitle}</Text>
                 </View>
               </View>
-              <Text style={styles.earnPoints}>{method.points}</Text>
             </View>
           ))}
         </View>
@@ -294,5 +295,4 @@ const styles = StyleSheet.create({
   },
   earnTitle: { fontSize: 14, fontWeight: '500', color: '#111' },
   earnSubtitle: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  earnPoints: { fontSize: 14, fontWeight: '700', color: '#4B8E3D' },
 });
