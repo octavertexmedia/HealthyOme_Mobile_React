@@ -1,126 +1,168 @@
 import { useState, useCallback } from 'react';
-import { paymentsApi, type CreatePaymentResponse, type PaymentMethod } from '../api/payments.api';
+import {
+  paymentsApi,
+  type CreateOrderRequest,
+  type CreateConsultOrderRequest,
+  type CreateFunctionalTrainingOrderRequest,
+  type CreateOrderResponse,
+  type FulfillmentPassthrough,
+} from '../api/payments.api';
 
 export type PayResult =
-  | { status: 'paid'; ref_id: string }
+  | {
+      status: 'paid';
+      transaction_id: number;
+      order_ids: number[];
+      zero_rupee: boolean;
+      subscription_id?: number;
+      subscription_recharged?: boolean;
+      consult_booking_id?: number;
+      functional_training_enrollment_id?: number;
+    }
   | { status: 'cancelled' }
   | { status: 'failed'; error: string };
 
 /**
- * usePayment orchestrates create-order → SDK → verify.
+ * Razorpay-only checkout params. `kind` selects which create-*-order endpoint
+ * the server-authoritative amount is derived from; `fulfillment` is the
+ * passthrough (address_id, delivery_date, email, coupon_code, notes, ...) that
+ * verify / complete-zero-order forward into order creation.
+ */
+export type PayParams =
+  | { kind: 'cart'; order: CreateOrderRequest; fulfillment?: FulfillmentPassthrough }
+  | {
+      kind: 'consult';
+      order: CreateConsultOrderRequest;
+      fulfillment?: FulfillmentPassthrough;
+    }
+  | {
+      kind: 'functional_training';
+      order: CreateFunctionalTrainingOrderRequest;
+      fulfillment?: FulfillmentPassthrough;
+    };
+
+/**
+ * usePayment orchestrates: public-key -> create-*-order -> (Razorpay SDK ->
+ * verify) OR (complete-zero-order for a ₹0 100%-coupon checkout).
  *
- * SDK requirements (require `npx expo prebuild --clean`):
- *   npm install react-native-razorpay @stripe/stripe-react-native
+ * Native SDK is a later phase:
+ *   npm install react-native-razorpay  (then `npx expo prebuild --clean`)
  *
- * Until the SDKs are installed, razorpay/stripe will return
- * { status: 'failed', error: 'payment_sdk_missing' }.
+ * Until it is installed, a CHARGEABLE order returns
+ * { status: 'failed', error: 'payment_sdk_missing' }. The zero-rupee path never
+ * touches the SDK, so ₹0 (100%-coupon) checkout still works today.
  */
 export function usePayment() {
   const [loading, setLoading] = useState(false);
 
-  const pay = useCallback(
-    async (params: {
-      method: PaymentMethod;
-      orderIds?: number[];
-      bookingId?: number;
-    }): Promise<PayResult> => {
-      setLoading(true);
+  const pay = useCallback(async (params: PayParams): Promise<PayResult> => {
+    setLoading(true);
+    try {
+      const init = await createOrderFor(params);
+
+      // ₹0 (100% coupon): no charge — settle via complete-zero-order.
+      if (init.zero_rupee_checkout) {
+        const res = await paymentsApi.completeZeroOrder({
+          // Spread passthrough first so the authoritative transaction_id below
+          // can never be clobbered by a stray fulfillment key.
+          ...(params.fulfillment ?? {}),
+          transaction_id: init.transaction_id,
+        });
+        return paidResult(init.transaction_id, res, true);
+      }
+
+      // Chargeable order: need the native Razorpay SDK. In Expo Go the JS
+      // package resolves but the native module is absent, so also verify
+      // `.open` exists — otherwise report payment_sdk_missing (needs a dev build).
+      let RazorpayCheckout: any;
       try {
-        const init: CreatePaymentResponse = await paymentsApi.createOrder({
-          method: params.method,
-          order_ids: params.orderIds,
-          booking_id: params.bookingId,
+        RazorpayCheckout = require('react-native-razorpay').default;
+      } catch {
+        return { status: 'failed', error: 'payment_sdk_missing' };
+      }
+      if (!RazorpayCheckout || typeof RazorpayCheckout.open !== 'function') {
+        return { status: 'failed', error: 'payment_sdk_missing' };
+      }
+
+      const pk = await paymentsApi.getPublicKey();
+      if (!pk.enabled || !pk.key_id) {
+        return { status: 'failed', error: 'payments_disabled' };
+      }
+
+      try {
+        const data = await RazorpayCheckout.open({
+          key: pk.key_id,
+          // JSON amount is rupees(float); Razorpay wants paise(int).
+          amount: Math.round(init.amount * 100),
+          currency: init.currency,
+          order_id: init.razorpay_order_id,
+          name: 'HealthyOme',
+          description: 'Order payment',
+          theme: { color: '#1F8A3C' },
         });
 
-        if (init.method === 'cod') {
-          return { status: 'paid', ref_id: init.ref_id };
-        }
-
-        if (init.method === 'razorpay') {
-          return runRazorpay(init);
-        }
-
-        return runStripe(init);
+        const res = await paymentsApi.verify({
+          // Spread passthrough first so the authoritative verification fields
+          // below can never be clobbered by a stray fulfillment key.
+          ...(params.fulfillment ?? {}),
+          transaction_id: init.transaction_id,
+          razorpay_order_id: data.razorpay_order_id,
+          razorpay_payment_id: data.razorpay_payment_id,
+          razorpay_signature: data.razorpay_signature,
+        });
+        return paidResult(init.transaction_id, res, false);
       } catch (e: any) {
-        const msg = e?.response?.data?.error || e?.message || 'payment_error';
-        return { status: 'failed', error: String(msg) };
-      } finally {
-        setLoading(false);
+        if (e?.code === 0 || /cancel/i.test(e?.description ?? '')) {
+          return { status: 'cancelled' };
+        }
+        return {
+          status: 'failed',
+          error: e?.description || e?.message || 'razorpay_error',
+        };
       }
-    },
-    []
-  );
+    } catch (e: any) {
+      const msg =
+        e?.response?.data?.error || e?.message || 'payment_error';
+      return { status: 'failed', error: String(msg) };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   return { pay, loading };
 }
 
-async function runRazorpay(
-  init: Extract<CreatePaymentResponse, { method: 'razorpay' }>
-): Promise<PayResult> {
-  let RazorpayCheckout: any;
-  try {
-    RazorpayCheckout = require('react-native-razorpay').default;
-  } catch {
-    return { status: 'failed', error: 'payment_sdk_missing' };
-  }
-
-  try {
-    const data = await RazorpayCheckout.open({
-      key: init.key_id,
-      amount: init.amount,
-      currency: init.currency,
-      order_id: init.provider_order_id,
-      name: 'HealthyOme',
-      description: 'Order payment',
-      theme: { color: '#1F8A3C' },
-    });
-    await paymentsApi.verifyRazorpay({
-      ref_id: init.ref_id,
-      razorpay_order_id: data.razorpay_order_id,
-      razorpay_payment_id: data.razorpay_payment_id,
-      razorpay_signature: data.razorpay_signature,
-    });
-    return { status: 'paid', ref_id: init.ref_id };
-  } catch (e: any) {
-    if (e?.code === 0 || /cancel/i.test(e?.description ?? '')) {
-      return { status: 'cancelled' };
-    }
-    return { status: 'failed', error: e?.description || e?.message || 'razorpay_error' };
+function createOrderFor(params: PayParams): Promise<CreateOrderResponse> {
+  switch (params.kind) {
+    case 'consult':
+      return paymentsApi.createConsultOrder(params.order);
+    case 'functional_training':
+      return paymentsApi.createFunctionalTrainingOrder(params.order);
+    case 'cart':
+    default:
+      return paymentsApi.createOrder(params.order);
   }
 }
 
-async function runStripe(
-  init: Extract<CreatePaymentResponse, { method: 'stripe' }>
-): Promise<PayResult> {
-  let stripe: any;
-  try {
-    stripe = require('@stripe/stripe-react-native');
-  } catch {
-    return { status: 'failed', error: 'payment_sdk_missing' };
-  }
-
-  const { initPaymentSheet, presentPaymentSheet } = stripe;
-  if (!initPaymentSheet || !presentPaymentSheet) {
-    return { status: 'failed', error: 'payment_sdk_missing' };
-  }
-
-  const initRes = await initPaymentSheet({
-    paymentIntentClientSecret: init.client_secret,
-    merchantDisplayName: 'HealthyOme',
-  });
-  if (initRes?.error) {
-    return { status: 'failed', error: initRes.error.message || 'stripe_init_failed' };
-  }
-
-  const present = await presentPaymentSheet();
-  if (present?.error) {
-    if (present.error.code === 'Canceled') return { status: 'cancelled' };
-    return { status: 'failed', error: present.error.message || 'stripe_present_failed' };
-  }
-
-  await paymentsApi.verifyStripe({
-    ref_id: init.ref_id,
-    payment_intent_id: init.payment_intent_id,
-  });
-  return { status: 'paid', ref_id: init.ref_id };
+function paidResult(
+  transactionId: number,
+  res: {
+    order_ids: number[];
+    subscription_id?: number;
+    subscription_recharged?: boolean;
+    consult_booking_id?: number;
+    functional_training_enrollment_id?: number;
+  },
+  zeroRupee: boolean
+): PayResult {
+  return {
+    status: 'paid',
+    transaction_id: transactionId,
+    order_ids: res.order_ids ?? [],
+    zero_rupee: zeroRupee,
+    subscription_id: res.subscription_id,
+    subscription_recharged: res.subscription_recharged,
+    consult_booking_id: res.consult_booking_id,
+    functional_training_enrollment_id: res.functional_training_enrollment_id,
+  };
 }

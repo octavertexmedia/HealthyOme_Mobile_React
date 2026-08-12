@@ -1,7 +1,29 @@
 import { useEffect, useRef } from 'react';
 import { useAuthStore } from '../../auth/store/auth.store';
-import { useCartStore } from '../store/cart.store';
-import { cartApi } from '../api/cart.api';
+import { useCartStore, type CartItem } from '../store/cart.store';
+import { cartApi, type CartSyncLine } from '../api/cart.api';
+
+/**
+ * Maps local cart lines to the meal/snack lines /cart/sync/ accepts.
+ * Meal lines key by a numeric id; snack lines by a `snack-<id>` id. Custom bowls
+ * (`bowl-*`) can't be represented server-side and are intentionally omitted here
+ * (they are preserved locally by the store's hydrateFromServer instead).
+ */
+const toSyncLines = (items: CartItem[]): CartSyncLine[] => {
+  const lines: CartSyncLine[] = [];
+  for (const item of items) {
+    if (item.qty <= 0) continue;
+    if (/^\d+$/.test(item.id)) {
+      lines.push({ meal_item_id: parseInt(item.id, 10), quantity: item.qty });
+    } else if (item.id.startsWith('snack-')) {
+      const snackId = parseInt(item.id.slice('snack-'.length), 10);
+      if (Number.isFinite(snackId)) {
+        lines.push({ snack_item_id: snackId, quantity: item.qty });
+      }
+    }
+  }
+  return lines;
+};
 
 /**
  * Syncs the local Zustand cart with the server when the user becomes authenticated.
@@ -28,9 +50,7 @@ export function useCartSync() {
     (async () => {
       try {
         const local = useCartStore.getState().items;
-        const payload = local
-          .map((i) => ({ meal_item_id: parseInt(i.id, 10), quantity: i.qty }))
-          .filter((it) => Number.isFinite(it.meal_item_id) && it.quantity > 0);
+        const payload = toSyncLines(local);
 
         const server =
           payload.length > 0

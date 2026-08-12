@@ -6,6 +6,9 @@ import apiClient from '../../shared/api/client';
 
 let registering: Promise<boolean> | null = null;
 let rotationSub: ReturnType<typeof Notifications.addPushTokenListener> | null = null;
+// Remember the last token we registered so we can de-register the exact device
+// (the backend keys de-registration on fcm_token, not device_id).
+let lastToken: string | null = null;
 
 const ANDROID_CHANNELS: Array<{ id: string; name: string }> = [
   { id: 'orders',        name: 'Order updates' },
@@ -25,13 +28,16 @@ function deviceId(): string {
 
 async function postRegistration(token: string): Promise<boolean> {
   try {
-    await apiClient.post('/devices/register/', {
-      expo_push_token: token,
+    // Backend contract: POST /notifications/device/ (notifications/device_api.py).
+    // Requires `fcm_token`; device_type must be one of ios|android|web.
+    await apiClient.post('/notifications/device/', {
+      fcm_token: token,
       device_id: deviceId(),
       device_type: Platform.OS === 'ios' ? 'ios' : 'android',
       device_name: Device.deviceName ?? '',
       app_version: Constants.expoConfig?.version ?? '',
     });
+    lastToken = token;
     return true;
   } catch {
     return false;
@@ -106,10 +112,16 @@ export async function registerPushToken(): Promise<boolean> {
  */
 export async function unregisterPushToken(): Promise<void> {
   try {
-    await apiClient.post('/devices/unregister/', { device_id: deviceId() });
+    // Backend contract: DELETE /notifications/device/ with body { fcm_token }.
+    if (lastToken) {
+      await apiClient.delete('/notifications/device/', {
+        data: { fcm_token: lastToken },
+      });
+    }
   } catch {
     // intentionally swallowed
   }
+  lastToken = null;
   if (rotationSub) {
     rotationSub.remove();
     rotationSub = null;

@@ -24,20 +24,12 @@ function tomorrowIsoDate(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function idOf(field: unknown): number | undefined {
-  if (typeof field === 'number') return field;
-  if (field && typeof field === 'object' && 'id' in field) {
-    const id = (field as { id: number }).id;
-    return typeof id === 'number' ? id : undefined;
-  }
-  return undefined;
-}
-
 export default function CreateSubscription() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const params = useLocalSearchParams<{ planId?: string }>();
   const planId = params.planId ? Number(params.planId) : undefined;
@@ -55,6 +47,7 @@ export default function CreateSubscription() {
   const addressesQuery = useQuery({
     queryKey: ['addresses'],
     queryFn: addressesApi.list,
+    enabled: isAuthenticated,
   });
 
   const plan: SubscriptionPlan | undefined = useMemo(
@@ -67,19 +60,19 @@ export default function CreateSubscription() {
     return list.find((a) => a.is_default) ?? list[0];
   }, [addressesQuery.data]);
 
-  const createMutation = useMutation({
-    mutationFn: subscriptionApi.createSubscription,
+  const checkoutMutation = useMutation({
+    mutationFn: subscriptionApi.checkout,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
       Alert.alert(
         'Subscription created',
-        'Your subscription is set up. Payment can be completed from the subscriptions screen.',
+        'Your subscription is set up. You can manage deliveries from the subscriptions screen.',
         [{ text: 'View subscriptions', onPress: () => router.replace('/subscription' as any) }]
       );
     },
     onError: (e: any) => {
       Alert.alert(
-        'Could not create subscription',
+        'Could not start subscription',
         e?.response?.data?.error || e?.message || 'Please try again.'
       );
     },
@@ -94,12 +87,15 @@ export default function CreateSubscription() {
       Alert.alert('Select a plan', 'Please return to plans and pick one.');
       return;
     }
-    const mealPlanTypeId = idOf(plan.meal_plan_type);
-    const subscriptionPeriodId = idOf(plan.subscription_period);
-    const categoryId = idOf(plan.category);
-
-    if (!mealPlanTypeId || !subscriptionPeriodId) {
-      Alert.alert('Plan misconfigured', 'This plan is missing required fields. Pick another plan.');
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Sign in to subscribe',
+        'Please sign in to start a subscription.',
+        [
+          { text: 'Sign in', onPress: () => router.push('/(auth)/login' as any) },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
       return;
     }
     if (!defaultAddress) {
@@ -118,13 +114,12 @@ export default function CreateSubscription() {
       return;
     }
 
-    createMutation.mutate({
-      meal_plan_type_id: mealPlanTypeId,
-      subscription_period_id: subscriptionPeriodId,
-      category_id: categoryId,
-      start_date: startDate,
-      delivery_instructions: instructions,
-      veg_days: vegDays,
+    // Real creation goes through checkout (subscription_id = plan id + address).
+    // Preferences (start date, veg days, instructions) are applied via the manage
+    // settings endpoint after the subscription exists — see crossCutting notes.
+    checkoutMutation.mutate({
+      subscription_id: plan.id,
+      address_id: defaultAddress.id,
     });
   };
 
@@ -158,8 +153,7 @@ export default function CreateSubscription() {
             <View style={styles.planSummary}>
               <Text style={styles.summaryLabel}>Selected Plan</Text>
               <Text style={styles.summaryTitle}>
-                {plan.name ||
-                  (typeof plan.meal_plan_type === 'object' ? plan.meal_plan_type.name : 'Plan')}
+                {plan.name || plan.meal_plan_type?.name || 'Plan'}
               </Text>
               <Text style={styles.summaryPrice}>₹{Number(plan.price).toFixed(0)}</Text>
             </View>
@@ -244,10 +238,10 @@ export default function CreateSubscription() {
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.md }]}>
         <Button
-          title={createMutation.isPending ? 'Creating…' : 'Start Subscription'}
+          title={checkoutMutation.isPending ? 'Starting…' : 'Start Subscription'}
           onPress={handleSubmit}
-          loading={createMutation.isPending}
-          disabled={!plan || createMutation.isPending}
+          loading={checkoutMutation.isPending}
+          disabled={!plan || checkoutMutation.isPending}
           fullWidth
           size="lg"
         />

@@ -79,6 +79,8 @@ export default function RootLayout() {
           <Stack.Screen name="bowl-builder" options={{ headerShown: false }} />
           <Stack.Screen name="rewards" options={{ headerShown: false }} />
           <Stack.Screen name="consult" options={{ headerShown: false }} />
+          <Stack.Screen name="snacks" options={{ headerShown: false }} />
+          <Stack.Screen name="functional-training" options={{ headerShown: false }} />
           <Stack.Screen name="profile-pages" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         </Stack>

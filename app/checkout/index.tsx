@@ -1,23 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Modal, ActivityIndicator,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
+import { useCheckoutQuote } from '../../src/features/cart/hooks/useCheckoutQuote';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
-import { ordersApi } from '../../src/features/orders/api/orders.api';
 import { addressesApi } from '../../src/features/addresses/api/addresses.api';
 import { usePayment } from '../../src/features/payments/hooks/usePayment';
-import type { PaymentMethod } from '../../src/features/payments/api/payments.api';
-
-const PAYMENT_OPTIONS: { method: PaymentMethod; label: string; sub: string; icon: any }[] = [
-  { method: 'razorpay', label: 'UPI / Cards (Razorpay)', sub: 'Pay using UPI, cards, netbanking', icon: 'card-outline' },
-  { method: 'stripe',   label: 'International cards (Stripe)', sub: 'Visa, Mastercard, Amex', icon: 'card' },
-  { method: 'cod',      label: 'Cash on Delivery', sub: 'Pay when your order arrives', icon: 'cash-outline' },
-];
+import type { CreateOrderItem } from '../../src/features/payments/api/payments.api';
 
 export default function CheckoutScreen() {
   const router = useRouter();
@@ -26,7 +20,6 @@ export default function CheckoutScreen() {
   const { isAuthenticated, user } = useAuthStore();
   const { pay, loading: paying } = usePayment();
 
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [includeCutlery, setIncludeCutlery] = useState(false);
   const [sendWhatsAppUpdates, setSendWhatsAppUpdates] = useState(true);
@@ -42,9 +35,31 @@ export default function CheckoutScreen() {
     return list.find((a) => a.is_default) ?? list[0];
   }, [addressesQuery.data]);
 
-  const phone = (user as any)?.phone_number || (user as any)?.username || '';
+  const email = ((user as any)?.email as string | undefined) ?? '';
 
-  const startCheckout = () => {
+  // Server-authoritative totals (subtotal / shipping / discount / payable_total).
+  // Falls back to the local estimate while loading / logged-out / bowl-only.
+  const { data: quote } = useCheckoutQuote();
+  const itemTotal = quote?.subtotal ?? totalPrice;
+  const discount = quote?.discount ?? 0;
+  const shipping = quote?.shipping ?? 0;
+  const payable = quote?.payable_total ?? totalPrice;
+
+  // Only meal & snack lines are server-quotable; custom bowls are skipped here.
+  const orderLines = useMemo<CreateOrderItem[]>(() => {
+    const lines: CreateOrderItem[] = [];
+    for (const it of items) {
+      if (/^\d+$/.test(it.id)) {
+        lines.push({ meal_item_id: parseInt(it.id, 10), quantity: it.qty });
+      } else if (it.id.startsWith('snack-')) {
+        const snackId = parseInt(it.id.slice('snack-'.length), 10);
+        if (Number.isFinite(snackId)) lines.push({ snack_item_id: snackId, quantity: it.qty });
+      }
+    }
+    return lines;
+  }, [items]);
+
+  const startCheckout = async () => {
     if (!isAuthenticated) {
       router.push('/(auth)/login' as any);
       return;
@@ -57,62 +72,62 @@ export default function CheckoutScreen() {
       ]);
       return;
     }
-    setSheetOpen(true);
-  };
+    if (!email) {
+      Alert.alert('Add your email', 'We need an email on your profile to send the order receipt.', [
+        { text: 'Add email', onPress: () => router.push('/profile-pages/edit' as any) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    if (orderLines.length === 0) {
+      Alert.alert('Nothing to checkout', 'Your cart has no orderable meal or snack items.');
+      return;
+    }
 
-  const onPickMethod = async (method: PaymentMethod) => {
-    setSheetOpen(false);
     setPlacing(true);
     try {
-      const deliveryAreaId = defaultAddress!.delivery_area?.id;
-      if (!deliveryAreaId) {
-        Alert.alert(
-          'Missing delivery area',
-          'This address is not linked to a delivery area. Please edit the address and try again.'
-        );
-        return;
-      }
-
-      const placeRes = await ordersApi.placeOrder({
-        address_id: defaultAddress!.id,
-        delivery_area_id: deliveryAreaId,
-        phone: defaultAddress!.contact_number || phone,
-        delivery_instructions: 'Hand it to me',
-        notes: includeCutlery ? 'Include cutlery' : '',
-        items: items.map((i) => ({ meal_item_id: parseInt(i.id, 10), quantity: i.qty })),
+      // Razorpay-only: create-order derives the authoritative amount; the order
+      // rows are created by verify (or complete-zero-order for a ₹0 coupon).
+      const payRes = await pay({
+        kind: 'cart',
+        order: {
+          items: orderLines,
+          address_id: defaultAddress.id,
+          email,
+        },
+        fulfillment: {
+          address_id: defaultAddress.id,
+          email,
+          delivery_instructions: 'Hand it to me',
+          notes: includeCutlery ? 'Include cutlery' : '',
+          whatsapp_updates: sendWhatsAppUpdates,
+        },
       });
 
-      const orderIds: number[] = placeRes?.order_ids ?? [];
-      if (orderIds.length === 0) {
-        Alert.alert('Order failed', 'We could not place your order. Please try again.');
-        return;
-      }
-
-      const payRes = await pay({ method, orderIds });
       if (payRes.status === 'paid') {
+        const orderId = payRes.order_ids[0];
         clearCart();
         Alert.alert('Order placed', 'Payment successful — your meal is on the way!', [
           {
             text: 'View order',
             onPress: () => {
               router.dismissAll();
-              router.push(`/orders/my/${orderIds[0]}` as any);
+              if (orderId) router.push(`/orders/my/${orderId}` as any);
+              else router.push('/(tabs)/orders' as any);
             },
           },
         ]);
       } else if (payRes.status === 'cancelled') {
-        Alert.alert(
-          'Payment cancelled',
-          'Your order is reserved but unpaid. Try again from your orders screen.',
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Payment cancelled', 'No charge was made. You can try again anytime.');
       } else if (payRes.error === 'payment_sdk_missing') {
         Alert.alert(
           'Update required',
-          'Card payments need an app update. Use Cash on Delivery for now.'
+          'Online payment needs the latest app build. Please update the app to complete checkout.'
         );
+      } else if (payRes.error === 'payments_disabled') {
+        Alert.alert('Payments unavailable', 'Online payments are temporarily disabled. Please try again later.');
       } else {
-        Alert.alert('Payment failed', payRes.error || 'Please try a different method.');
+        Alert.alert('Payment failed', payRes.error || 'Please try again.');
       }
     } catch (e: any) {
       const msg = e?.response?.data?.error || e?.message || 'Something went wrong';
@@ -202,12 +217,24 @@ export default function CheckoutScreen() {
 
         <View style={[styles.sectionPad, { paddingTop: 8 }]}>
           <Text style={styles.summaryTitle}>Order summary</Text>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Item total</Text><Text style={styles.summaryValue}>₹ {totalPrice}</Text></View>
-          <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Discount</Text><Text style={styles.summaryValue}>₹ 0</Text></View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Item total</Text>
+            <Text style={styles.summaryValue}>₹ {itemTotal}</Text>
+          </View>
+          {discount > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Discount</Text>
+              <Text style={[styles.summaryValue, { color: '#2C921D' }]}>− ₹ {discount}</Text>
+            </View>
+          )}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Delivery fee</Text>
+            <Text style={styles.summaryValue}>{shipping > 0 ? `₹ ${shipping}` : 'Free'}</Text>
+          </View>
           <View style={styles.dashedDivider} />
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { fontWeight: '600', color: '#0B262F', fontSize: 18 }]}>To be paid</Text>
-            <Text style={[styles.summaryValue, { fontWeight: '600', color: '#0B262F', fontSize: 18 }]}>₹ {totalPrice}</Text>
+            <Text style={[styles.summaryValue, { fontWeight: '600', color: '#0B262F', fontSize: 18 }]}>₹ {payable}</Text>
           </View>
         </View>
       </ScrollView>
@@ -243,57 +270,11 @@ export default function CheckoutScreen() {
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.payBtnText}>Proceed to Pay ₹{totalPrice}</Text>
+            <Text style={styles.payBtnText}>Proceed to Pay ₹{payable}</Text>
           )}
         </TouchableOpacity>
       </View>
-
-      <PaymentMethodSheet
-        visible={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        onPick={onPickMethod}
-        amount={totalPrice}
-      />
     </View>
-  );
-}
-
-function PaymentMethodSheet({
-  visible, onClose, onPick, amount,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onPick: (m: PaymentMethod) => void;
-  amount: number;
-}) {
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.sheet}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Choose payment method</Text>
-          <Text style={styles.sheetSub}>Amount: ₹{amount}</Text>
-          {PAYMENT_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.method}
-              style={styles.methodRow}
-              activeOpacity={0.85}
-              onPress={() => onPick(opt.method)}
-            >
-              <Ionicons name={opt.icon} size={26} color="#0B262F" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.methodLabel}>{opt.label}</Text>
-                <Text style={styles.methodSub}>{opt.sub}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#6C6C6C" />
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity onPress={onClose} style={styles.sheetCancel}>
-            <Text style={styles.sheetCancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
   );
 }
 
@@ -369,21 +350,4 @@ const styles = StyleSheet.create({
     marginHorizontal: 20, backgroundColor: '#2C921D', borderRadius: 90, paddingVertical: 16, alignItems: 'center',
   },
   payBtnText: { color: '#fff', fontWeight: '500', fontSize: 16 },
-
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32,
-  },
-  sheetHandle: { alignSelf: 'center', width: 44, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1', marginBottom: 12 },
-  sheetTitle: { fontSize: 18, fontWeight: '600', color: '#0B262F' },
-  sheetSub: { fontSize: 14, color: '#6C6C6C', marginTop: 4, marginBottom: 16 },
-  methodRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14,
-    borderTopWidth: 1, borderTopColor: '#EFEFEF',
-  },
-  methodLabel: { fontSize: 15, fontWeight: '600', color: '#0B262F' },
-  methodSub: { fontSize: 13, color: '#6C6C6C', marginTop: 2 },
-  sheetCancel: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  sheetCancelText: { fontSize: 15, fontWeight: '600', color: '#0B262F' },
 });

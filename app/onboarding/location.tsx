@@ -1,26 +1,62 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { storage } from '../../src/shared/storage/mmkv';
+import { useCurrentLocation } from '../../src/features/location/hooks/useCurrentLocation';
+import { locationStorage } from '../../src/features/location/api/locationStorage';
+import DeliveryAreaPicker, {
+  type DeliveryAreaSelection,
+} from '../../src/features/delivery-areas/components/DeliveryAreaPicker';
 
 export default function LocationPermissionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { detect, loading } = useCurrentLocation();
 
-  const handleComplete = () => {
-    // Mark onboarding flags
-    storage.set('has_onboarded', 'true');
-    storage.set('has_location_permission', 'true');
+  const [showPicker, setShowPicker] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const finishOnboarding = async (params: {
+    label: string;
+    hasPermission: boolean;
+    deliveryAreaId?: number | null;
+  }) => {
+    await storage.set('has_onboarded', 'true');
+    await locationStorage.save({
+      label: params.label,
+      hasPermission: params.hasPermission,
+      deliveryAreaId: params.deliveryAreaId ?? null,
+    });
+    if (!params.hasPermission) {
+      await locationStorage.setPermission(false);
+    }
     router.replace('/(tabs)');
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setNotice(null);
+    const result = await detect();
+    if (result) {
+      await finishOnboarding({ label: result.label, hasPermission: true });
+      return;
+    }
+    // Permission denied or location unavailable -> fall back to the picker.
+    setNotice('We could not access your location. Please pick a delivery area instead.');
+    setShowPicker(true);
+  };
+
+  const handleAreaSelected = async (area: DeliveryAreaSelection) => {
+    setShowPicker(false);
+    await finishOnboarding({ label: area.name, hasPermission: false, deliveryAreaId: area.id });
   };
 
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
-      
+
       <View style={styles.content}>
         <View style={styles.iconCircle}>
           <Ionicons name="location" size={40} color="#2C921D" />
@@ -30,17 +66,38 @@ export default function LocationPermissionScreen() {
         <Text style={styles.subtitle}>
           We serve select areas to keep meals fresh and healthy.
         </Text>
+
+        {!!notice && <Text style={styles.notice}>{notice}</Text>}
       </View>
 
       <View style={[styles.bottomContainer, { paddingBottom: Math.max(insets.bottom, 24) }]}>
-        <TouchableOpacity style={styles.btnPrimary} onPress={handleComplete}>
-          <Text style={styles.btnPrimaryText}>Use Current Location</Text>
+        <TouchableOpacity
+          style={[styles.btnPrimary, loading && styles.btnDisabled]}
+          onPress={handleUseCurrentLocation}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnPrimaryText}>Use Current Location</Text>
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.btnSecondary} onPress={handleComplete}>
+        <TouchableOpacity
+          style={styles.btnSecondary}
+          onPress={() => setShowPicker(true)}
+          disabled={loading}
+        >
           <Text style={styles.btnSecondaryText}>Or Select a Pickup Point</Text>
         </TouchableOpacity>
       </View>
+
+      <DeliveryAreaPicker
+        visible={showPicker}
+        onClose={() => setShowPicker(false)}
+        onSelect={handleAreaSelected}
+        title="Select a pickup point"
+      />
     </View>
   );
 }
@@ -78,6 +135,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
+  notice: {
+    marginTop: 24,
+    fontSize: 14,
+    color: '#B45309',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   bottomContainer: {
     paddingHorizontal: 24,
     gap: 16,
@@ -89,6 +153,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
   btnPrimaryText: {
     color: '#fff',

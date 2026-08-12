@@ -3,17 +3,60 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking } from 'r
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSiteSettings } from '../../src/features/catalog/hooks/useMeals';
 import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
 
-const SUPPORT_OPTIONS = [
-  { icon: 'logo-whatsapp', label: 'Chat on WhatsApp', color: '#25D366', onPress: () => Linking.openURL('https://wa.me/919876543210') },
-  { icon: 'mail-outline', label: 'Email Support', color: colors.status.info, onPress: () => Linking.openURL('mailto:support@healthyome.com') },
-  { icon: 'call-outline', label: 'Call Us', color: colors.primary, onPress: () => Linking.openURL('tel:+919876543210') },
-];
+interface SupportOption {
+  key: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+  onPress: () => void;
+}
+
+// Keep only digits (WhatsApp deep links require a bare international number).
+const digitsOnly = (v: string) => v.replace(/\D/g, '');
 
 export default function SupportScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { data: settings } = useSiteSettings();
+
+  const options: SupportOption[] = [];
+
+  const whatsapp = settings?.whatsapp_number?.trim();
+  if (whatsapp) {
+    options.push({
+      key: 'whatsapp',
+      icon: 'logo-whatsapp',
+      label: 'Chat on WhatsApp',
+      color: '#25D366',
+      onPress: () => Linking.openURL(`https://wa.me/${digitsOnly(whatsapp)}`),
+    });
+  }
+
+  const email = settings?.contact_email?.trim();
+  if (email) {
+    options.push({
+      key: 'email',
+      icon: 'mail-outline',
+      label: 'Email Support',
+      color: colors.status.info,
+      onPress: () => Linking.openURL(`mailto:${email}`),
+    });
+  }
+
+  const phone = settings?.contact_phone_1?.trim() || settings?.contact_phone_2?.trim();
+  if (phone) {
+    options.push({
+      key: 'call',
+      icon: 'call-outline',
+      label: 'Call Us',
+      color: colors.primary,
+      onPress: () => Linking.openURL(`tel:${phone.replace(/\s/g, '')}`),
+    });
+  }
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -25,10 +68,10 @@ export default function SupportScreen() {
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.subtitle}>How can we help you?</Text>
-        {SUPPORT_OPTIONS.map((opt) => (
-          <TouchableOpacity key={opt.label} style={styles.optionCard} onPress={opt.onPress} activeOpacity={0.85}>
+        {options.map((opt) => (
+          <TouchableOpacity key={opt.key} style={styles.optionCard} onPress={opt.onPress} activeOpacity={0.85}>
             <View style={[styles.optionIcon, { backgroundColor: `${opt.color}20` }]}>
-              <Ionicons name={opt.icon as any} size={24} color={opt.color} />
+              <Ionicons name={opt.icon} size={24} color={opt.color} />
             </View>
             <Text style={styles.optionLabel}>{opt.label}</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.text.disabled} />
@@ -41,6 +84,13 @@ export default function SupportScreen() {
           <Text style={styles.optionLabel}>FAQs</Text>
           <Ionicons name="chevron-forward" size={18} color={colors.text.disabled} />
         </TouchableOpacity>
+
+        {!!settings?.address?.trim() && (
+          <View style={styles.addressCard}>
+            <Ionicons name="location-outline" size={20} color={colors.text.secondary} />
+            <Text style={styles.addressText}>{settings.address.trim()}</Text>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -59,4 +109,9 @@ const styles = StyleSheet.create({
   },
   optionIcon: { width: 44, height: 44, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
   optionLabel: { ...typography.body.lg, color: colors.text.primary, flex: 1 },
+  addressCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    marginTop: spacing.lg, paddingHorizontal: spacing.xs,
+  },
+  addressText: { ...typography.body.md, color: colors.text.secondary, flex: 1, lineHeight: 20 },
 });

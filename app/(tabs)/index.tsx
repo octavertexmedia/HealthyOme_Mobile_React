@@ -9,57 +9,27 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useQuery } from '@tanstack/react-query';
-import { useFeaturedMeals } from '../../src/features/catalog/hooks/useMeals';
+import { useFeaturedMeals, useHomeLayout, useMealCategories } from '../../src/features/catalog/hooks/useMeals';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { rewardsApi } from '../../src/features/rewards/api/rewards.api';
+import { addressesApi } from '../../src/features/addresses/api/addresses.api';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
-
-// SVG Imports
-import CatSmoothie from '../../assets/images/figma/new_home/cat_smoothie.svg';
-import CatSoup from '../../assets/images/figma/new_home/cat_soup.svg';
-import CatSalads from '../../assets/images/figma/new_home/cat_salads.svg';
-import CatMeals from '../../assets/images/figma/new_home/cat_meals.svg';
-import CatMeals2 from '../../assets/images/figma/new_home/cat_meals_2.svg';
-import HeroBgShape from '../../assets/images/figma/new_home/hero_bg_shape.svg';
 
 const { width } = Dimensions.get('window');
 // compute card width to fit inside horizontal padding (20px each side)
 const CARD_WIDTH = width - 40;
 
-const PROMOS = [
-  {
-    id: 1,
-    title: "20% off 1st order, up to $10",
-    description: "Get upto 20% off on your first order with code GET20OFF",
-    bgColor: "#DFF4F4",
-    img: require('../../assets/images/figma/new_home/promo_blue_right.png'),
-    btnColor: "#0099A3",
-    btnTextColor: "#fff",
-  },
-  {
-    id: 2,
-    title: "20% off 1st order, up to $10",
-    description: "Get upto 20% off on your first order with code GET20OFF",
-    bgColor: "#FFF5CD",
-    img: require('../../assets/images/figma/new_home/promo_yellow_right.png'),
-    btnColor: "#F5CD31",
-    btnTextColor: "#111",
-  },
-];
-
-const CATEGORIES = [
-  { id: "1", name: "Smoothie", Icon: CatSmoothie },
-  { id: "2", name: "Soup", Icon: CatSoup },
-  { id: "3", name: "Salads", Icon: CatSalads },
-  { id: "4", name: "Meals", Icon: CatMeals },
-  { id: "5", name: "Meals", Icon: CatMeals2 },
-];
-
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { data: featuredMeals, refetch: refetchMeals } = useFeaturedMeals();
+  const {
+    data: featuredMeals,
+    refetch: refetchMeals,
+    isLoading: isFeaturedLoading,
+  } = useFeaturedMeals();
+  const { data: homeLayout, refetch: refetchHome } = useHomeLayout();
+  const { data: categories } = useMealCategories();
   const addItem = useCartStore((s) => s.addItem);
   const cartCount = useCartStore((s) => s.totalItems);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -72,11 +42,31 @@ export default function HomeScreen() {
     staleTime: 60 * 1000,
   });
 
+  const addressesQuery = useQuery({
+    queryKey: ['addresses'],
+    queryFn: addressesApi.list,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const defaultAddress =
+    addressesQuery.data?.find((a) => a.is_default) ?? addressesQuery.data?.[0];
+  const locationPrimary = defaultAddress
+    ? defaultAddress.label || defaultAddress.delivery_area?.name || 'Delivery'
+    : 'Select location';
+  const locationSecondary = defaultAddress
+    ? defaultAddress.delivery_area?.name && defaultAddress.label
+      ? defaultAddress.delivery_area.name
+      : defaultAddress.address
+    : undefined;
+
+  const promoBanners = homeLayout?.promo_banners ?? [];
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refetchMeals();
+    await Promise.all([refetchMeals(), refetchHome()]);
     setRefreshing(false);
-  }, [refetchMeals]);
+  }, [refetchMeals, refetchHome]);
 
   const getCategoryName = (meal: any): string => {
     if (meal.category && typeof meal.category === 'object') return meal.category.name;
@@ -101,13 +91,19 @@ export default function HomeScreen() {
         >
           {/* Header inside Hero */}
           <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.locationWrap}>
+            <TouchableOpacity
+              style={styles.locationWrap}
+              onPress={() => router.push('/profile-pages/addresses' as any)}
+              activeOpacity={0.85}
+            >
               <View style={styles.pinCircle}>
                 <Ionicons name="location" size={20} color="#111" />
               </View>
-              <View>
-                <Text style={styles.locationText}>Pune</Text>
-                <Text style={styles.addressText}>Address</Text>
+              <View style={{ maxWidth: 160 }}>
+                <Text style={styles.locationText} numberOfLines={1}>{locationPrimary}</Text>
+                {locationSecondary ? (
+                  <Text style={styles.addressText} numberOfLines={1}>{locationSecondary}</Text>
+                ) : null}
               </View>
             </TouchableOpacity>
 
@@ -135,7 +131,9 @@ export default function HomeScreen() {
 
           {/* Hero Content */}
           <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>Healthy Eating,{'\n'}Made Effortless.</Text>
+            {homeLayout?.hero_headline ? (
+              <Text style={styles.heroTitle}>{homeLayout.hero_headline}</Text>
+            ) : null}
           </View>
 
           <Image
@@ -150,31 +148,40 @@ export default function HomeScreen() {
           />
         </LinearGradient>
 
-        {/* ─── PROMO CAROUSEL ─── */}
-        <View style={{ marginTop: 12 }}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
-          >
-            {PROMOS.map((promo) => (
-              <View key={promo.id} style={[styles.promoSliderCard, { backgroundColor: promo.bgColor }]}>
-                {/* Right Image */}
-                <Image source={promo.img} style={styles.promoSliderImg} resizeMode="cover" />
-                
-                {/* Content */}
-                <View style={styles.promoSliderContent}>
-                  <Text style={styles.promoSliderTitle}>{promo.title}</Text>
-                  <Text style={styles.promoSliderDesc}>{promo.description}</Text>
-                  
-                  <TouchableOpacity style={[styles.promoSliderBtn, { backgroundColor: promo.btnColor }]}>
-                    <Text style={[styles.promoSliderBtnText, { color: promo.btnTextColor, textTransform: 'capitalize' }]}>Learn more</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
+        {/* ─── PROMO CAROUSEL ─── (only when the CMS returns banners) */}
+        {promoBanners.length > 0 && (
+          <View style={{ marginTop: 12 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+            >
+              {promoBanners.map((promo) => {
+                const bannerImg = getImageUrl(promo.right_image_src);
+                return (
+                  <View key={promo.id} style={[styles.promoSliderCard, { backgroundColor: promo.bg_color || '#EAF5EA' }]}>
+                    {bannerImg ? (
+                      <Image source={{ uri: bannerImg }} style={styles.promoSliderImg} resizeMode="cover" />
+                    ) : null}
+
+                    <View style={styles.promoSliderContent}>
+                      <Text style={styles.promoSliderTitle}>{promo.title}</Text>
+                      <Text style={styles.promoSliderDesc}>{promo.description}</Text>
+
+                      <TouchableOpacity
+                        style={[styles.promoSliderBtn, { backgroundColor: promo.button_bg_color || '#0099A3' }]}
+                        onPress={() => router.push('/(tabs)/menu')}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.promoSliderBtnText, { color: promo.button_text_color || '#fff', textTransform: 'capitalize' }]}>Learn more</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
         {/* ─── SUBSCRIPTION MEALS CARD ─── */}
         <View style={styles.sectionPad}>
@@ -189,8 +196,8 @@ export default function HomeScreen() {
                   <Text style={styles.subBadgeText}>BEST VALUE</Text>
                 </View>
                 <View style={{ marginTop: 2 }}>
-                  <Text style={styles.subTitle}>Subscription Meals</Text>
-                  <Text style={styles.subDesc}>Long-term habit builder</Text>
+                  <Text style={styles.subTitle}>{homeLayout?.subscription_card_title || 'Subscription Meals'}</Text>
+                  <Text style={styles.subDesc}>{homeLayout?.subscription_card_subtitle || ''}</Text>
                 </View>
               </View>
 
@@ -217,8 +224,8 @@ export default function HomeScreen() {
             >
               <View style={styles.subCardLeft}>
                 <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: 8 }}>
-                  <Text style={styles.quickTitle}>Quick Meals</Text>
-                  <Text style={[styles.subDesc, { marginTop: 4 }]}>Instant healthy delivery</Text>
+                  <Text style={styles.quickTitle}>{homeLayout?.quick_meals_title || 'Quick Meals'}</Text>
+                  <Text style={[styles.subDesc, { marginTop: 4 }]}>{homeLayout?.quick_meals_subtitle || ''}</Text>
                 </View>
               </View>
 
@@ -250,8 +257,8 @@ export default function HomeScreen() {
             >
               <View style={styles.subCardLeft}>
                 <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: 8 }}>
-                  <Text style={styles.quickTitle}>Consult a Dietician</Text>
-                  <Text style={[styles.subDesc, { marginTop: 4 }]}>Personalized food guidance</Text>
+                  <Text style={styles.quickTitle}>{homeLayout?.consult_card_title || 'Consult a Dietician'}</Text>
+                  <Text style={[styles.subDesc, { marginTop: 4 }]}>{homeLayout?.consult_card_subtitle || ''}</Text>
                 </View>
               </View>
 
@@ -264,22 +271,92 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ─── CATEGORIES ─── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionHeading}>Categories</Text>
+        {/* ─── HEALTHY SNACKS CARD ─── */}
+        <View style={styles.sectionPad}>
+          <TouchableOpacity
+            style={[styles.roundedCardWrap, { borderColor: '#F3F3F3', borderWidth: 1 }]}
+            onPress={() => router.push('/snacks' as any)}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={['#FFFFFF', '#FDF3E6']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={styles.subCardGradient}
+            >
+              <View style={styles.subCardLeft}>
+                <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: 8 }}>
+                  <Text style={styles.quickTitle}>{homeLayout?.healthy_snacks_card_title || 'Healthy Snacks'}</Text>
+                  <Text style={[styles.subDesc, { marginTop: 4 }]}>{homeLayout?.healthy_snacks_card_subtitle || ''}</Text>
+                </View>
+              </View>
+              <View style={styles.homeCardIcon}>
+                <Ionicons name="nutrition-outline" size={44} color="#E8873B" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingVertical: 12 }}
-        >
-          {CATEGORIES.map((cat) => (
-            <TouchableOpacity key={cat.id} style={styles.catItem} onPress={() => router.push('/(tabs)/menu')}>
-              <cat.Icon width={56} height={56} style={{ marginBottom: 8 }} />
-              <Text style={styles.catLabel}>{cat.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+
+        {/* ─── FUNCTIONAL TRAINING CARD ─── */}
+        <View style={styles.sectionPad}>
+          <TouchableOpacity
+            style={[styles.roundedCardWrap, { borderColor: '#F3F3F3', borderWidth: 1 }]}
+            onPress={() => router.push('/functional-training' as any)}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={['#FFFFFF', '#EAF0FF']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={styles.subCardGradient}
+            >
+              <View style={styles.subCardLeft}>
+                <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: 8 }}>
+                  <Text style={styles.quickTitle}>{homeLayout?.functional_training_card_title || 'Functional Training'}</Text>
+                  <Text style={[styles.subDesc, { marginTop: 4 }]}>{homeLayout?.functional_training_card_subtitle || ''}</Text>
+                </View>
+              </View>
+              <View style={styles.homeCardIcon}>
+                <Ionicons name="barbell-outline" size={44} color="#3B6FE8" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* ─── CATEGORIES ─── */}
+        {categories && categories.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeading}>Categories</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingVertical: 12 }}
+            >
+              {categories.map((cat) => {
+                const catImg = getImageUrl(cat.image_url || cat.image);
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={styles.catItem}
+                    onPress={() =>
+                      router.push({ pathname: '/(tabs)/menu', params: { category: String(cat.id) } })
+                    }
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.catIconWrap}>
+                      {catImg ? (
+                        <Image source={{ uri: catImg }} style={styles.catIconImg} resizeMode="cover" />
+                      ) : (
+                        <Ionicons name="restaurant" size={26} color="#4B8E3D" />
+                      )}
+                    </View>
+                    <Text style={styles.catLabel} numberOfLines={1}>{cat.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </>
+        )}
 
         {/* ─── FEATURED MEALS ─── */}
         <View style={styles.sectionHeader}>
@@ -291,7 +368,7 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 20, gap: 16, marginTop: 16 }}
         >
-          {featuredMeals ? featuredMeals.slice(0, 4).map((meal) => {
+          {featuredMeals && featuredMeals.length > 0 ? featuredMeals.slice(0, 4).map((meal) => {
             const price = typeof meal.price === 'string' ? parseFloat(meal.price) : meal.price || 0;
             return (
               <TouchableOpacity
@@ -328,16 +405,18 @@ export default function HomeScreen() {
               </TouchableOpacity>
             )
           }) : (
-            <Text style={{ marginLeft: 20 }}>Loading featured meals...</Text>
+            <Text style={{ marginLeft: 20 }}>
+              {isFeaturedLoading ? 'Loading featured meals...' : 'No featured meals available'}
+            </Text>
           )}
         </ScrollView>
 
         {/* ─── FOOTER ─── */}
-        <View style={styles.footerWrap}>
-          <Text style={styles.footerText}>
-            Serving select areas to keep meals fresh and healthy 🌱
-          </Text>
-        </View>
+        {homeLayout?.home_footer_text ? (
+          <View style={styles.footerWrap}>
+            <Text style={styles.footerText}>{homeLayout.home_footer_text}</Text>
+          </View>
+        ) : null}
 
       </ScrollView>
     </View>
@@ -431,6 +510,7 @@ const styles = StyleSheet.create({
   quickImgRightPlats: { width: 110, height: 110, position: 'absolute', right: -30, bottom: -20 },
   
   consultImg: { width: 90, height: 105, position: 'absolute', right: 0, bottom: -5 },
+  homeCardIcon: { position: 'absolute', right: 24, top: 0, bottom: 0, justifyContent: 'center' },
 
   /* Section Headings */
   sectionHeader: { paddingHorizontal: 20, marginTop: 24 },
@@ -438,7 +518,11 @@ const styles = StyleSheet.create({
 
   /* Categories */
   catItem: { alignItems: 'center', width: 74 },
-  catIcon: { width: 56, height: 56, marginBottom: 8 },
+  catIconWrap: {
+    width: 56, height: 56, borderRadius: 28, marginBottom: 8, overflow: 'hidden',
+    backgroundColor: '#EAF5EA', justifyContent: 'center', alignItems: 'center',
+  },
+  catIconImg: { width: '100%', height: '100%' },
   catLabel: { fontSize: 14, fontWeight: '500', color: '#111', textAlign: 'center' },
 
   /* Featured Meals */

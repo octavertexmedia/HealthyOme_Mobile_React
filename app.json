@@ -18,7 +18,8 @@
       "bundleIdentifier": "com.healthyome.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow HealthyOme to access your camera for profile photos",
-        "NSPhotoLibraryUsageDescription": "Allow HealthyOme to access your photos for profile photos"
+        "NSPhotoLibraryUsageDescription": "Allow HealthyOme to access your photos for profile photos",
+        "NSLocationWhenInUseUsageDescription": "Allow HealthyOme to use your location to find delivery areas near you."
       }
     },
     "android": {
@@ -38,6 +39,12 @@
       "expo-router",
       "expo-font",
       "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow HealthyOme to use your location to find delivery areas near you."
+        }
+      ],
       [
         "expo-splash-screen",
         {
