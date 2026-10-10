@@ -66,8 +66,9 @@
       "router": {
         "origin": false
       },
-      "apiUrl": "https://dev.healthyome.com/api/shop",
-      "appEnv": "development"
+      "apiUrl": "https://healthyome.in/api/shop",
+      "appEnv": "production",
+      "readOnlyPreview": true
     }
   }
 }
