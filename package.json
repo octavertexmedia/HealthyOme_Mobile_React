@@ -13,6 +13,7 @@
     "test:watch": "jest --watch",
     "check": "npm run lint && npm run typecheck && npm test",
     "test:guest-device": "node scripts/android-guest-e2e.cjs",
+    "preflight:auth-e2e": "node scripts/auth-e2e-preflight.cjs",
     "capture:web-reference": "node scripts/capture-mobile-web.cjs",
     "prebuild": "expo prebuild"
   },

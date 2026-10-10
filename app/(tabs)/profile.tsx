@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { subscriptionApi } from '../../src/features/subscription/api/subscription.api';
+import { ScreenHeader } from '../../src/shared/components/ScreenHeader';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -80,13 +81,13 @@ export default function ProfileScreen() {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <ScreenHeader title="Your Account" />
       {/* HEADER */}
       <LinearGradient
         colors={['#0F3D21', '#1E6F3E']}
-        style={[styles.headerGradient, { paddingTop: Math.max(insets.top, 20) }]}
+        style={[styles.headerGradient, { paddingTop: 20 }]}
       >
-        <Text style={styles.headerTitle}>Your Account</Text>
         <Text style={styles.headerSubtitle}>
           {isAuthenticated && user ? (user.username || user.first_name || 'User') : 'Guest'}
         </Text>
@@ -94,7 +95,7 @@ export default function ProfileScreen() {
 
       <ScrollView 
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
       >
         {/* ACTIVE SUBSCRIPTION CARD */}
         {activeSub && (

@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   TouchableOpacity,
+  Platform,
   Text,
   StyleSheet,
   ActivityIndicator,
@@ -77,6 +78,8 @@ export default function Button({
 
 const styles = StyleSheet.create({
   base: {
+    minHeight: Platform.OS === 'android' ? 48 : 44,
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

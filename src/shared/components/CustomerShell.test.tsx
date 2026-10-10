@@ -4,6 +4,8 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { CustomerShell, shellTabSelected } from './CustomerShell';
 import { customerShellPolicy } from './shellPolicy';
 import Login from '../../../app/(auth)/login';
+import { ScreenHeader } from './ScreenHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 let mockPath = '/';
 const mockNavigate = jest.fn(); const mockPush = jest.fn(); const mockBack = jest.fn();
@@ -19,7 +21,7 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaInsetsContext: C, useSafeAreaInsets: () => R.useContext(C) };
 });
 
-it.each(['/', '/snacks', '/subscription/plans/test', '/subscription/create', '/cart', '/profile', '/consult', '/functional-training'])('owns exactly one header and tab bar on browsing route %s', (path) => {
+it.each(['/', '/snacks', '/catalog', '/menu', '/training', '/dietitian', '/consult', '/functional-training'])('owns exactly one header and tab bar on main browsing route %s', (path) => {
   mockPath = path; render(<CustomerShell><Text>Route content</Text></CustomerShell>);
   expect(screen.getAllByTestId('customer-top-navigation')).toHaveLength(1);
   expect(screen.getAllByTestId('persistent-bottom-navigation')).toHaveLength(1);
@@ -27,7 +29,7 @@ it.each(['/', '/snacks', '/subscription/plans/test', '/subscription/create', '/c
   expect(screen.getAllByRole('tab')).toHaveLength(5);
   expect(screen.getByLabelText('Cart, 2 items')).toBeTruthy();
 });
-it.each(['/login', '/verify', '/(auth)/login', '/checkout', '/consult/health', '/product-review/snack/8'])('removes redundant shell chrome for focused route %s', (path) => {
+it.each(['/login', '/verify', '/(auth)/login', '/checkout', '/consult/health', '/product-review/snack/8', '/subscription/plans/test', '/subscription/create', '/cart', '/profile-pages/edit', '/functional-training/trainer', '/orders/my/8'])('removes redundant shell chrome for focused/detail route %s', (path) => {
   mockPath = path; render(<CustomerShell><Text>Focused content</Text></CustomerShell>);
   expect(screen.queryByTestId('customer-top-navigation')).toBeNull();
   expect(screen.queryByTestId('persistent-bottom-navigation')).toBeNull();
@@ -59,7 +61,30 @@ it('maps nested service routes to their tabs without treating profile as Home', 
   expect(shellTabSelected('training', '/functional-training/example')).toBe(true);
   expect(shellTabSelected('dietitian', '/consult/my')).toBe(true);
   expect(shellTabSelected('index', '/profile')).toBe(false);
-  expect(customerShellPolicy('/profile-pages/terms').tabs).toBe(true);
+  expect(customerShellPolicy('/profile-pages/terms').tabs).toBe(false);
   expect(customerShellPolicy('/checkout').keyboard).toBe(true);
   expect(customerShellPolicy('/login').keyboard).toBe(false);
+});
+
+it.each(['/subscription/categories', '/subscription/plans', '/profile', '/orders'])('keeps tab access but only one compact title bar on secondary list %s', (path) => {
+  mockPath = path;
+  render(<CustomerShell><ScreenHeader title="Route title" /></CustomerShell>);
+  expect(screen.queryByTestId('customer-top-navigation')).toBeNull();
+  expect(screen.queryByLabelText('HealthyOme')).toBeNull();
+  expect(screen.getAllByTestId('screen-header')).toHaveLength(1);
+  expect(screen.getAllByTestId('persistent-bottom-navigation')).toHaveLength(1);
+  fireEvent.press(screen.getByLabelText('Cart, 2 items'));
+  expect(mockNavigate).toHaveBeenCalledWith('/cart');
+});
+
+it('consumes detail system insets exactly once without a global bar or covering the CTA', () => {
+  function Content() {
+    const insets = useSafeAreaInsets();
+    return <Text testID="remaining-insets">{JSON.stringify(insets)}</Text>;
+  }
+  mockPath = '/subscription/create';
+  render(<CustomerShell><ScreenHeader title="Customize plan" /><Content /></CustomerShell>);
+  expect(screen.getByTestId('customer-route-content')).toHaveStyle({ paddingTop: 40, paddingBottom: 20, flex: 1 });
+  expect(screen.getByTestId('remaining-insets')).toHaveTextContent('{"top":0,"bottom":0,"left":0,"right":0}');
+  expect(screen.queryByTestId('persistent-bottom-navigation')).toBeNull();
 });

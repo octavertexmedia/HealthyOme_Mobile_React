@@ -7,6 +7,7 @@ const mockUpdateQuantity = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush, back: jest.fn() }) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('../../shared/components/PlatformIcon', () => ({ PlatformIcon: () => null }));
 jest.mock('./hooks/useCheckoutQuote', () => ({ useCheckoutQuote: () => ({ data: undefined }) }));
 jest.mock('./store/cart.store', () => ({
   useCartStore: () => ({

@@ -14,6 +14,7 @@ import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { colors } from '../../src/shared/theme';
 import { formatPrice, formatDate, formatTime } from '../../src/shared/utils/helpers';
 import EmptyState from '../../src/shared/components/EmptyState';
+import { ScreenHeader } from '../../src/shared/components/ScreenHeader';
 
 type TabType = 'subscriptions' | 'quick';
 
@@ -94,9 +95,7 @@ export default function OrdersScreen() {
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>My orders</Text>
-        </View>
+        <ScreenHeader title="My orders" />
         <EmptyState
           icon="log-in-outline"
           title="Login to see your orders"
@@ -113,9 +112,7 @@ export default function OrdersScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My orders</Text>
-      </View>
+      <ScreenHeader title="My orders" />
 
       <View style={styles.tabsContainer}>
         <View style={styles.tabsWrapper}>

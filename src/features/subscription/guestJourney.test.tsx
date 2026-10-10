@@ -28,6 +28,8 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('../../shared/components/PlatformIcon', () => ({ PlatformIcon: () => null }));
+jest.mock('../cart/store/cart.store', () => ({ useCartStore: (select: (state: unknown) => unknown) => select({ totalItems: 0 }) }));
 jest.mock('../../shared/storage/mmkv', () => ({ storage: { set: jest.fn().mockResolvedValue(undefined) } }));
 jest.mock('../auth/store/auth.store', () => ({ useAuthStore: (select: (state: unknown) => unknown) => select({ isAuthenticated: false, user: null }) }));
 jest.mock('../payments/hooks/usePayment', () => ({ usePayment: () => ({ pay: mockPay, loading: false }) }));

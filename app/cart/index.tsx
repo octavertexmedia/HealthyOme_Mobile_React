@@ -5,6 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenHeader } from '../../src/shared/components/ScreenHeader';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { useCheckoutQuote } from '../../src/features/cart/hooks/useCheckoutQuote';
 import { cartItemDetailPath } from '../../src/features/cart/utils/cartNavigation';
@@ -39,13 +40,7 @@ export default function CartScreen() {
   if (items.length === 0) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Cart</Text>
-          <View style={{ width: 24 }} />
-        </View>
+        <ScreenHeader title="Cart" showCart={false} />
         {resumePlan}
         <EmptyState
           icon="cart-outline"
@@ -60,15 +55,7 @@ export default function CartScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Cart ({totalItems})</Text>
-        <TouchableOpacity onPress={clearCart}>
-          <Text style={styles.clearText}>Clear</Text>
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader title={`Cart (${totalItems})`} showCart={false} action={{ label: 'Clear', onPress: clearCart }} />
 
       <FlatList
         ListHeaderComponent={resumePlan}
@@ -166,7 +153,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { ...typography.heading.lg, color: colors.text.primary },
   clearText: { ...typography.body.md, color: colors.status.error },
-  listContent: { paddingHorizontal: spacing.xl, paddingBottom: 120 },
+  listContent: { paddingHorizontal: spacing.xl, paddingBottom: spacing.lg },
   cartItem: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
     padding: spacing.md, borderRadius: borderRadius.xl, marginBottom: spacing.md,

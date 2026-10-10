@@ -6,6 +6,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenHeader } from '../../src/shared/components/ScreenHeader';
 import { useQuery } from '@tanstack/react-query';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { useCheckoutQuote } from '../../src/features/cart/hooks/useCheckoutQuote';
@@ -301,13 +302,7 @@ function CheckoutContent() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to cart" onPress={() => router.canGoBack() ? router.back() : router.replace('/cart')}>
-          <Ionicons name="arrow-back" size={24} color="#111" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Checkout</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <ScreenHeader title="Checkout" fallback="/cart" backLabel="Back to cart" showCart={false} />
 
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
         <View>

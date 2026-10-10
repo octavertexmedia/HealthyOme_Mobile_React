@@ -2,7 +2,7 @@ import React, { type ReactNode } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { ScreenHeader } from '../../shared/components/ScreenHeader';
 import { getImageUrl } from '../../shared/utils/helpers';
 import { env } from '../../shared/config/env';
 
@@ -10,17 +10,12 @@ export function BrowseScreen({ title, fallback, children }: { title: string; fal
   const router = useRouter();
   const insets = useSafeAreaInsets();
   return <View style={[browseStyles.screen, { paddingTop: insets.top }]}>
-    <View style={browseStyles.header}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.canGoBack() ? router.back() : router.replace(fallback)}>
-        <Ionicons name="chevron-back" size={26} color="#183829" />
-      </TouchableOpacity>
-      <Text style={browseStyles.heading}>{title}</Text>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="My subscriptions" onPress={() => router.push('/subscription/my')} style={{ minHeight: 44, justifyContent: 'center' }}>
-        <Text style={{ fontSize: 12, color: '#397B30', fontWeight: '600' }}>My plans</Text>
-      </TouchableOpacity>
-    </View>
+    <ScreenHeader title={title} fallback={fallback} />
     <ScrollView contentContainerStyle={[browseStyles.content, { paddingBottom: insets.bottom + 28 }]}>
       {env.readOnlyPreview ? <Text style={browseStyles.notice}>Guest preview · payments and account changes disabled</Text> : null}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="My subscriptions" onPress={() => router.push('/subscription/my')} style={{ minHeight: 48, alignSelf: 'flex-end', justifyContent: 'center', paddingHorizontal: 8 }}>
+        <Text style={{ fontSize: 14, color: '#397B30', fontWeight: '600' }}>My plans</Text>
+      </TouchableOpacity>
       {children}
     </ScrollView>
   </View>;

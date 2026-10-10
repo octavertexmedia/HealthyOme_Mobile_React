@@ -8,6 +8,7 @@ import { useAuthStore } from '../auth/store/auth.store';
 import { defaultBrowsePlan } from './browsePolicy';
 import { getImageUrl } from '../../shared/utils/helpers';
 import Button from '../../shared/components/Button';
+import { ScreenHeader } from '../../shared/components/ScreenHeader';
 
 export default function SubscriptionPlanDetails() {
   const router = useRouter();
@@ -29,10 +30,7 @@ export default function SubscriptionPlanDetails() {
     router.push({ pathname: '/subscription/create', params: { plan: slug, planId: String(quick.id), mealTimes: String(data?.meal_times[0]?.id ?? ''), quick: 'true' } });
   };
   return <View style={styles.screen}>
-    <View style={styles.heading}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.canGoBack() ? router.back() : router.replace('/subscription/plans')} style={styles.back}><Ionicons name="chevron-back" size={23} /></TouchableOpacity>
-      <Text style={styles.headingText}>Subscription Plans</Text><View style={styles.back} />
-    </View>
+    <ScreenHeader title="Subscription Plans" fallback="/subscription/plans" />
     <ScrollView contentContainerStyle={styles.scroll}>
       {query.isLoading ? <ActivityIndicator accessibilityLabel="Loading plan" /> : query.isError || !data ? <View style={styles.section}>
         <Text>Could not load this plan.</Text><Button title="Retry plan" onPress={() => { void query.refetch(); }} />

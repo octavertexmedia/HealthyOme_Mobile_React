@@ -5,6 +5,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenHeader } from '../../src/shared/components/ScreenHeader';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors, spacing, borderRadius, typography } from '../../src/shared/theme';
 import Button from '../../src/shared/components/Button';
@@ -234,13 +235,7 @@ export default function CreateSubscription() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity accessibilityLabel="Go back" onPress={() => router.canGoBack() ? router.back() : router.replace('/subscription/plans')}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Customize plan</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <ScreenHeader title="Customize plan" fallback="/subscription/plans" />
 
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {loading ? (

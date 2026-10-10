@@ -12,6 +12,8 @@ jest.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: mockData, i
 jest.mock('../auth/store/auth.store', () => ({ useAuthStore: (fn: (state: unknown) => unknown) => fn({ isAuthenticated: false }) }));
 jest.mock('./api/subscription.api', () => ({ subscriptionApi: {} }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('../../shared/components/PlatformIcon', () => ({ PlatformIcon: () => null }));
+jest.mock('../cart/store/cart.store', () => ({ useCartStore: (select: (state: unknown) => unknown) => select({ totalItems: 0 }) }));
 beforeEach(() => {
   mockError = false;
   const type = { id: 74, name: 'Test plan', image_url: 'https://healthyome.in/hero.png', available_menu_view: 'card' as const, menu_card_image_url: 'https://healthyome.in/menu.png' };

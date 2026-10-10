@@ -20,6 +20,7 @@ const mockCart = { items: [{ id: '7', name: 'Fixture meal', qty: 1, price: 300 }
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush, back: jest.fn() }), useLocalSearchParams: () => ({}) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('../../shared/components/PlatformIcon', () => ({ PlatformIcon: () => null }));
 jest.mock('@tanstack/react-query', () => ({ useQuery: () => mockAddressQuery }));
 jest.mock('./hooks/useCheckoutQuote', () => ({ useCheckoutQuote: (options: unknown) => mockUseQuote(options) }));
 jest.mock('../catalog/hooks/useMeals', () => ({ useSiteSettings: () => ({ data: {} }) }));

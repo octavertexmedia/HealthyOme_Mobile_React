@@ -1,5 +1,9 @@
 # Contextual shell and subscription UI — 10 October 2026
 
+Latest policy: see [SELECTIVE_NAVIGATION_VALIDATION.md](SELECTIVE_NAVIGATION_VALIDATION.md).
+The newer instruction removes the full header from details/setup, Cart and Profile;
+the policy below is retained as historical context, not the current acceptance rule.
+
 Follow-up to source `2bee2117628afdb174c3176f64cbabf91923f1ea` on
 `codex/mobile-parity-fixes`. The latest user instruction supersedes the earlier
 request to show navigation everywhere. The commit containing this report is
