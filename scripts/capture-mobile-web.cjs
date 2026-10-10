@@ -13,7 +13,7 @@ const referenceName = process.argv[3] || 'home';
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main() {
   if (!fs.existsSync(chromePath)) throw new Error('Chrome is not installed at the configured path; no download or retry performed.');
-  if (!/^\/(?:subscription\/|checkout$|$)/.test(referencePath) || !/^[a-z0-9-]+$/.test(referenceName)) throw new Error('Only public same-origin reference routes and simple filenames are allowed.');
+  if (!/^\/(?:subscription\/|checkout$|sidebar$|$)/.test(referencePath) || !/^[a-z0-9-]+$/.test(referenceName)) throw new Error('Only public same-origin reference routes and simple filenames are allowed.');
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'healthyome-web-reference-'));
   const out = path.resolve(__dirname, '../artifacts/mobile-web-reference');
   fs.mkdirSync(out, { recursive: true });

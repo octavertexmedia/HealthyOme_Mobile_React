@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,11 +10,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { subscriptionApi } from '../../src/features/subscription/api/subscription.api';
 import { ScreenHeader } from '../../src/shared/components/ScreenHeader';
+import { useSiteSettings } from '../../src/features/catalog/hooks/useMeals';
+import { accountMenu, accountMenuHref, type AccountMenuItem } from '../../src/features/auth/accountMenu';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuthStore();
+  const { data: settings } = useSiteSettings();
 
   const activeSubsQuery = useQuery({
     queryKey: ['subscriptions', 'active'],
@@ -23,62 +26,26 @@ export default function ProfileScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const activeSub = activeSubsQuery.data?.[0];
+  const activeSub = isAuthenticated ? activeSubsQuery.data?.[0] : undefined;
 
-  const handleLogout = async () => {
-    await logout();
-    router.replace('/(auth)/login');
+  const handleItem = async (item: AccountMenuItem) => {
+    try {
+      if (item.kind === 'logout') {
+        await logout();
+        router.replace('/(auth)/login');
+      } else if (item.kind === 'website') {
+        await Linking.openURL(item.url);
+      } else {
+        const href = accountMenuHref(item, isAuthenticated);
+        if (href) router.push(href);
+      }
+    } catch {
+      Alert.alert(item.kind === 'website' ? 'Could not open website' : 'Could not complete action',
+        item.kind === 'website' ? `Please visit ${item.url} in your browser.` : 'Please try again.');
+    }
   };
 
-  const sections = [
-    ...(isAuthenticated ? [{
-      title: "Orders",
-      items: [
-        { label: "All Subscriptions", icon: "cube-outline", route: "/subscription/my" },
-        { label: "My Orders", icon: "bag-handle-outline", route: "/(tabs)/orders" },
-      ],
-    },
-    {
-      title: "Your Information",
-      items: [
-        { label: "Saved Address", icon: "location-outline", route: "/profile-pages/addresses" },
-        { label: "Edit Profile", icon: "person-outline", route: "/profile-pages/edit" },
-        { label: "Favourites", icon: "heart-outline", route: "/profile-pages/favourites" },
-      ],
-    },
-    {
-      title: "Payments",
-      items: [
-        { label: "My Rewards", icon: "gift-outline", route: "/rewards" },
-        { label: "Payment Modes", icon: "card-outline", route: "/profile-pages/payment" },
-        { label: "Offers", icon: "pricetag-outline", route: "/profile-pages/offers" },
-      ],
-    }] : []),
-    {
-      title: "Support",
-      items: [
-        { label: "Help & Support", icon: "help-circle-outline", route: "/profile-pages/support" },
-        { label: "FAQs", icon: "document-text-outline", route: "/profile-pages/faqs" },
-      ],
-    },
-    {
-      title: "Account",
-      items: [
-        ...(isAuthenticated
-          ? [
-            { label: "Notifications", icon: "notifications-outline", route: "/profile-pages/notifications" },
-            { label: "Notification Preferences", icon: "options-outline", route: "/profile-pages/preferences" },
-          ]
-          : []),
-        { label: "Terms of Service", icon: "document-text-outline", route: "/profile-pages/terms?slug=terms" },
-        { label: "Privacy Policy", icon: "shield-checkmark-outline", route: "/profile-pages/terms?slug=privacy" },
-        { label: "Data Deletion", icon: "trash-outline", route: "/profile-pages/data-deletion" },
-        isAuthenticated
-          ? { label: "Logout", icon: "log-out-outline", route: "LOGOUT", isDanger: true }
-          : { label: "Sign In", icon: "log-in-outline", route: "/(auth)/login" },
-      ],
-    },
-  ];
+  const sections = accountMenu(isAuthenticated, settings);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -86,11 +53,12 @@ export default function ProfileScreen() {
       {/* HEADER */}
       <LinearGradient
         colors={['#0F3D21', '#1E6F3E']}
-        style={[styles.headerGradient, { paddingTop: 20 }]}
+        style={styles.headerGradient}
       >
         <Text style={styles.headerSubtitle}>
           {isAuthenticated && user ? (user.username || user.first_name || 'User') : 'Guest'}
         </Text>
+        {!isAuthenticated && <Text style={styles.guestHint}>Browse freely. Sign in to manage your account.</Text>}
       </LinearGradient>
 
       <ScrollView 
@@ -102,8 +70,10 @@ export default function ProfileScreen() {
           <View style={styles.subscriptionSection}>
             <TouchableOpacity
               activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="View active subscriptions"
               style={styles.subscriptionCardShadow}
-          onPress={() => router.push('/subscription/my' as any)}
+              onPress={() => router.push('/subscription/my')}
             >
               <LinearGradient
                 colors={['#2E8B1D', '#1E6F3E']}
@@ -132,22 +102,20 @@ export default function ProfileScreen() {
         )}
 
         {/* SECTIONS */}
-        {sections.map((section, sIdx) => (
+        {sections.map((section) => (
           <View key={section.title} style={styles.sectionWrap}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>{section.title}</Text>
             
             <View style={styles.sectionCard}>
               {section.items.map((item, idx) => (
                 <TouchableOpacity
                   key={item.label}
                   activeOpacity={0.7}
-                  onPress={() => {
-                    if (item.route === 'LOGOUT') {
-                      handleLogout();
-                    } else if (item.route) {
-                      router.push(item.route as any);
-                    }
-                  }}
+                  accessibilityRole={item.kind === 'website' ? 'link' : 'button'}
+                  accessibilityLabel={item.label}
+                  accessibilityHint={item.kind === 'website' ? 'Opens the Healthy-O-Me website in your browser'
+                    : item.kind === 'route' && item.needsAuth && !isAuthenticated ? 'Sign in to continue' : undefined}
+                  onPress={() => { void handleItem(item); }}
                   style={[
                     styles.sectionItemRow,
                     idx !== section.items.length - 1 && styles.sectionItemBorder
@@ -155,18 +123,19 @@ export default function ProfileScreen() {
                 >
                   <View style={styles.sectionItemLeft}>
                     <Ionicons 
-                      name={item.icon as any} 
+                      name={item.icon}
                       size={20} 
-                      color={item.isDanger ? '#EF4444' : '#6B7280'} 
+                      color={item.kind === 'logout' ? '#B42318' : '#6B7280'}
                     />
                     <Text style={[
                       styles.sectionItemLabel, 
-                      item.isDanger ? { color: '#EF4444' } : { color: '#1F2937' }
+                      item.kind === 'logout' ? { color: '#B42318' } : { color: '#1F2937' }
                     ]}>
                       {item.label}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                  <Ionicons name={item.kind === 'website' ? 'open-outline'
+                    : item.kind === 'route' && item.needsAuth && !isAuthenticated ? 'lock-closed-outline' : 'chevron-forward'} size={18} color="#6B7280" />
                 </TouchableOpacity>
               ))}
             </View>
@@ -183,13 +152,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F6F6' },
   headerGradient: {
     paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingVertical: 16,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#fff',
-  },
+  guestHint: { fontSize: 13, lineHeight: 19, color: '#E3F0DE', marginTop: 4 },
   headerSubtitle: {
     marginTop: 4,
     fontSize: 18,
@@ -199,7 +164,7 @@ const styles = StyleSheet.create({
   /* Subscription Card */
   subscriptionSection: {
     paddingHorizontal: 16,
-    marginTop: -16, 
+    marginTop: 12,
     marginBottom: 8,
     zIndex: 10,
   },
@@ -241,14 +206,14 @@ const styles = StyleSheet.create({
 
   /* Sections */
   sectionWrap: {
-    marginTop: 24,
+    marginTop: 16,
     paddingHorizontal: 16,
   },
   sectionTitle: {
     marginBottom: 8,
     fontSize: 12,
     fontWeight: '600',
-    color: '#9A9A9A',
+    color: '#616B63',
     textTransform: 'uppercase',
   },
   sectionCard: {
@@ -261,7 +226,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
+    minHeight: 48,
+    gap: 12,
   },
   sectionItemBorder: {
     borderBottomWidth: 1,
@@ -271,9 +238,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+    minWidth: 0,
   },
   sectionItemLabel: {
     fontSize: 14,
     fontWeight: '500',
+    flexShrink: 1,
+    lineHeight: 20,
   },
 });
