@@ -10,6 +10,7 @@ import { filterMenuDays, formatMenuDate, menuDateRange, menuQueryKey } from './m
 import Button from '../../shared/components/Button';
 import { ScreenHeader } from '../../shared/components/ScreenHeader';
 import PlanMenuSheet from './PlanMenuSheet';
+import { subscriptionSafety } from './safetyCopy';
 
 export const inlinePlanActions = (width: number, fontScale: number) => width >= 360 && fontScale <= 1.2;
 export default function SubscriptionPlanDetails({ menuInitiallyOpen = false, onMenuDismiss }: { menuInitiallyOpen?: boolean; onMenuDismiss?: () => void } = {}) {
@@ -18,6 +19,7 @@ export default function SubscriptionPlanDetails({ menuInitiallyOpen = false, onM
   const inlineActions = inlinePlanActions(width, fontScale);
   const { slug, planId, categoryId, mealTimeId, date } = useLocalSearchParams<{ slug: string; planId?: string; categoryId?: string; mealTimeId?: string; date?: string }>();
   const [menuOpen, setMenuOpen] = useState(menuInitiallyOpen);
+  const [safetyOpen, setSafetyOpen] = useState(false);
   const menuTrigger = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
   const restoreMenuFocus = useCallback(() => { const node = findNodeHandle(menuTrigger.current); if (node) AccessibilityInfo.setAccessibilityFocus(node); }, []);
   const closeMenu = useCallback(() => { setMenuOpen(false); onMenuDismiss?.(); }, [onMenuDismiss]);
@@ -48,12 +50,24 @@ export default function SubscriptionPlanDetails({ menuInitiallyOpen = false, onM
       </View> : <>
         <View style={styles.section}>
           <View style={styles.row}><Text style={[styles.title, { flex: 1 }]}>{planType?.name}</Text>
-            <TouchableOpacity accessibilityRole="link" accessibilityLabel="Safety info" style={styles.safetyLink} onPress={() => router.push('/profile-pages/faqs')}><Text style={styles.linkText}>Safety info</Text></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Safety Info" accessibilityState={{ expanded: safetyOpen }} style={styles.safetyLink} onPress={() => setSafetyOpen((open) => !open)}>
+              <Text style={styles.linkText}>Safety Info</Text><Ionicons name={safetyOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#34732D" />
+            </TouchableOpacity>
           </View>
           {!!description && description.toLowerCase() !== planType?.name.toLowerCase() && <Text style={styles.body}>{description}</Text>}
           {(data.stats?.avg_rating != null || !!data.stats?.subscriber_count) && <View style={styles.metadata}>
             {data.stats?.avg_rating != null && <Text style={styles.body}>Rating: {data.stats.avg_rating}</Text>}
             {!!data.stats?.subscriber_count && <Text style={styles.body}>{data.stats.subscriber_count} subscribers</Text>}
+          </View>}
+          {safetyOpen && <View testID="general-safety-information" style={styles.safetyContent}>
+            <Text style={styles.sectionTitle}>General safety information</Text>
+            <Text style={styles.body}>{subscriptionSafety.summary}</Text>
+            {subscriptionSafety.bullets.map((bullet) => <Text key={bullet} style={styles.body}>• {bullet}</Text>)}
+            <Text style={styles.body}>This plan overview does not provide item-specific allergen information. Contact support about ingredients or allergens before ordering.</Text>
+            <View style={styles.metadata}>
+              <TouchableOpacity accessibilityRole="link" style={styles.safetyLink} onPress={() => router.push('/profile-pages/faqs')}><Text style={styles.linkText}>Read all FAQs</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="link" style={styles.safetyLink} onPress={() => router.push('/profile-pages/support')}><Text style={styles.linkText}>Contact support</Text></TouchableOpacity>
+            </View>
           </View>}
         </View>
         {planType?.show_available_menu !== false && <TouchableOpacity ref={menuTrigger} accessibilityRole="button" accessibilityLabel="View day-wise menu schedule" accessibilityHint="Opens a dismissible menu sheet" style={styles.section}
@@ -96,7 +110,7 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 16, paddingVertical: 12, gap: 8, borderBottomWidth: 1, borderColor: '#E5E7EB' }, title: { fontSize: 17, lineHeight: 23, fontWeight: '600', color: '#111827' },
   body: { fontSize: 14, lineHeight: 20, color: '#626D60' }, sectionTitle: { fontSize: 14, fontWeight: '600', color: '#111827' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 32 }, priceRow: { minHeight: 44 },
-  metadata: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, safetyLink: { minHeight: 44, minWidth: 72, alignItems: 'center', justifyContent: 'center' }, linkText: { fontSize: 14, color: '#34732D', fontWeight: '600' },
+  metadata: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, safetyLink: { minHeight: 44, minWidth: 72, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' }, safetyContent: { gap: 8, padding: 12, borderRadius: 12, backgroundColor: '#F4F8F1' }, linkText: { fontSize: 14, color: '#34732D', fontWeight: '600' },
   previewRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' }, previewDate: { width: 92, fontSize: 14, lineHeight: 20, fontWeight: '600', color: '#183829' }, previewMeals: { flex: 1, gap: 4 },
   timings: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, time: { flexBasis: '46%', flexGrow: 1, gap: 4 },
   caption: { fontSize: 12, color: '#626D60', textAlign: 'center', lineHeight: 16 }, actions: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderTopWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#fff' },

@@ -94,7 +94,12 @@ async function main() {
   tap('Close day-wise menu');
   await inspect('legacy-menu-close', ['Subscription Plans', 'Available menu'], detail);
   open('subscription/plans/exotic-fruit-salad');
-  await inspect('fruit-plan-compact', ['Exotic Fruit Salad', 'Safety info', 'Plans and prices', 'Customize plan', '₹199'], detail);
+  await inspect('fruit-plan-compact', ['Exotic Fruit Salad', 'Safety Info', 'Plans and prices', 'Customize plan', '₹199'], detail);
+  tap('Safety Info');
+  await inspect('safety-expanded', ['General safety information', 'Staff health checks', 'item-specific allergen', 'Read all FAQs', 'Customize plan'], detail);
+  tap('Safety Info');
+  await inspect('safety-collapsed', ['Exotic Fruit Salad', 'Plans and prices', 'Customize plan'], detail);
+  if (latestXml.includes('General safety information')) throw new Error('Safety Info did not collapse.');
   if (!menuOnly) {
   open('subscription/create?plan=healthy-home-style-lunch-meals');
   await inspect('subscription-customize', ['Customize plan', 'Plan duration', 'Checkout'], detail);

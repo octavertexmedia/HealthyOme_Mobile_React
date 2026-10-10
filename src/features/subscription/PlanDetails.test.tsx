@@ -63,11 +63,36 @@ it('keeps actions stacked for narrow screens or enlarged text', () => {
   expect(inlinePlanActions(320, 1)).toBe(false);
   expect(inlinePlanActions(402, 1.5)).toBe(false);
 });
-it('removes generic filler while retaining real descriptions and the safety link', () => {
+it('removes generic filler while retaining real descriptions and access to the existing FAQs', () => {
   const view = render(<PlanDetails />);
   expect(screen.queryByText('Nutritionist-crafted meals delivered fresh.')).toBeNull();
-  fireEvent.press(screen.getByRole('link', { name: 'Safety info' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Safety Info' }));
+  fireEvent.press(screen.getByRole('link', { name: 'Read all FAQs' }));
   expect(mockPush).toHaveBeenCalledWith('/profile-pages/faqs');
   mockData.meal_plan_type.description = 'Fresh fruit, prepared daily.';
   view.rerender(<PlanDetails />); expect(screen.getByText('Fresh fruit, prepared daily.')).toBeTruthy();
+});
+it('starts Safety Info collapsed and preserves all general content across repeated toggles', () => {
+  render(<PlanDetails />);
+  const toggle = () => screen.getByRole('button', { name: 'Safety Info' });
+  expect(toggle().props.accessibilityState.expanded).toBe(false);
+  expect(screen.queryByTestId('general-safety-information')).toBeNull();
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    fireEvent.press(toggle()); expect(toggle().props.accessibilityState.expanded).toBe(true);
+    expect(screen.getByText('• Staff health checks before every shift')).toBeTruthy();
+    expect(screen.getByText('• Sanitised prep surfaces and sealed meal containers')).toBeTruthy();
+    expect(screen.getByText('• Contactless delivery to your doorstep')).toBeTruthy();
+    expect(screen.getByText(/does not provide item-specific allergen information/)).toBeTruthy();
+    fireEvent.press(toggle()); expect(screen.queryByTestId('general-safety-information')).toBeNull();
+  }
+  expect(mockPush).not.toHaveBeenCalled();
+});
+it('never hides the real description or purchase-blocking warning inside Safety Info', () => {
+  mockData.meal_plan_type.description = 'Published item-specific warning.';
+  mockData.can_subscribe = false; mockData.subscribe_blocker = 'The service cannot accept this purchase.';
+  render(<PlanDetails />);
+  expect(screen.getByText('Published item-specific warning.')).toBeTruthy();
+  expect(screen.getByRole('alert')).toHaveTextContent('The service cannot accept this purchase.');
+  expect(screen.queryByTestId('general-safety-information')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Customize plan' })).toBeDisabled();
 });
