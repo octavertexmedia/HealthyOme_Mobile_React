@@ -1,6 +1,8 @@
 // Exact allowlists: a new detail route must not inherit the entire browsing shell.
-const brandedBrowseRoutes = new Set(['/', '/menu', '/catalog', '/snacks', '/training', '/functional-training', '/dietitian', '/consult']);
-const tabRoutes = new Set([...brandedBrowseRoutes, '/orders', '/profile', '/subscription', '/subscription/categories', '/subscription/plans']);
+const brandedBrowseRoutes = new Set(['/', '/menu', '/catalog', '/training', '/functional-training', '/dietitian', '/consult']);
+// Snacks owns a local Back/title/Cart header, including its tab alias and deep
+// links. Bottom-tab eligibility must not imply ownership of a second top bar.
+const tabRoutes = new Set([...brandedBrowseRoutes, '/snacks', '/orders', '/profile', '/subscription', '/subscription/categories', '/subscription/plans']);
 
 /** Screens own compact titles/back controls; only main browsing owns full branding. */
 export function customerShellPolicy(path: string, segments?: readonly string[]) {

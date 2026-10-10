@@ -17,6 +17,7 @@ import { FastList } from '../../src/shared/components/FastList';
 import type { SnackItem } from '../../src/features/snacks/types/snack.types';
 import { ProductReviews } from '../../src/features/catalog/components/ProductReviews';
 import { CustomerFeatureGate } from '../../src/features/catalog/components/CustomerFeatureGate';
+import { PlatformIcon } from '../../src/shared/components/PlatformIcon';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - spacing.xl * 2 - spacing.md) / 2;
@@ -275,16 +276,19 @@ function EnabledSnacksScreen() {
     <View style={styles.container}>
       {/* ─── GREEN GRADIENT HEADER ─── */}
       <LinearGradient
+        testID="snacks-catalog-gradient"
         colors={['#7BAA5C', '#1E6F3E']}
         style={[styles.headerGradient, { paddingTop: insets.top + 8 }]}
       >
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={22} color="#fff" />
+        <View testID="snacks-catalog-header" style={styles.headerRow}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back"
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} style={styles.backBtn}>
+            <PlatformIcon name="back" size={22} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Healthy Snacks</Text>
-          <TouchableOpacity onPress={() => router.push('/cart')} style={styles.cartBtn}>
-            <Ionicons name="cart-outline" size={24} color="#fff" />
+          <Text accessibilityRole="header" style={styles.headerTitle}>Healthy Snacks</Text>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Cart, ${totalItems} items`}
+            onPress={() => router.navigate('/cart')} style={styles.cartBtn}>
+            <PlatformIcon name="cart" size={24} color="#fff" />
             {totalItems > 0 && (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{totalItems}</Text>
@@ -386,27 +390,7 @@ function EnabledSnacksScreen() {
         }
       />
 
-      {totalItems > 0 && (
-        <View style={[styles.floatingCartWrap, { bottom: insets.bottom + 15 }]}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => router.push('/cart')}
-            style={styles.floatingCart}
-          >
-            <View style={styles.floatingCartLeftIconWrap}>
-              <Ionicons name="cart-outline" size={18} color="#fff" />
-            </View>
-            <View style={styles.floatingCartCenter}>
-              <Text style={styles.floatingCartLabel}>View Cart</Text>
-              <Text style={styles.floatingCartSub}>{totalItems} items</Text>
-            </View>
-            <View style={styles.floatingCartRightIconWrap}>
-              <Ionicons name="chevron-forward" size={18} color="#fff" />
-            </View>
-          </TouchableOpacity>
-        </View>
-      )}
-
+      {/* Cart navigation stays in the fixed local header, even with items. */}
       {renderModal()}
     </View>
   );
@@ -421,9 +405,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: spacing.lg,
   },
-  backBtn: { padding: spacing.sm, marginLeft: -spacing.sm },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: '#fff' },
-  cartBtn: { position: 'relative', padding: spacing.sm },
+  backBtn: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center', marginLeft: -spacing.sm },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 22, lineHeight: 28, fontWeight: '700', color: '#fff' },
+  cartBtn: { position: 'relative', minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   cartBadge: {
     position: 'absolute', top: 0, right: 0, backgroundColor: '#FF6B35',
     width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center',
@@ -448,7 +432,7 @@ const styles = StyleSheet.create({
   filterTextActive: { color: '#fff' },
 
   /* ─ Grid ─ */
-  gridContent: { paddingHorizontal: spacing.xl, paddingBottom: 140, paddingTop: spacing.lg },
+  gridContent: { paddingHorizontal: spacing.xl, paddingBottom: spacing.lg, paddingTop: spacing.lg },
   gridRow: { gap: spacing.md, marginBottom: spacing.md },
   mealCard: {
     width: CARD_WIDTH, backgroundColor: '#fff', borderRadius: 16,
@@ -489,21 +473,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary, borderRadius: 999,
   },
   retryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-
-  /* ─ Floating Cart ─ */
-  floatingCartWrap: {
-    position: 'absolute', width: '100%', alignItems: 'center', zIndex: 50,
-  },
-  floatingCart: {
-    backgroundColor: '#04360F', flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 8, paddingVertical: 8, borderRadius: 40,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 16,
-  },
-  floatingCartLeftIconWrap: { backgroundColor: '#007A1A', padding: 8, borderRadius: 20 },
-  floatingCartCenter: { flexDirection: 'column' },
-  floatingCartLabel: { fontSize: 15, fontWeight: '600', color: '#fff', lineHeight: 18 },
-  floatingCartSub: { fontSize: 13, fontWeight: '400', color: '#fff', lineHeight: 16 },
-  floatingCartRightIconWrap: { backgroundColor: '#2C921D', padding: 8, borderRadius: 20 },
 
   /* ─── Modal ─── */
   modalBackdrop: {

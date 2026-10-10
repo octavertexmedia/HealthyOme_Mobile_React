@@ -6,13 +6,18 @@ import { customerShellPolicy } from './shellPolicy';
 import Login from '../../../app/(auth)/login';
 import { ScreenHeader } from './ScreenHeader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import SnacksScreen from '../../../app/snacks';
 
 let mockPath = '/';
 let mockSegments: string[] | undefined;
-const mockNavigate = jest.fn(); const mockPush = jest.fn(); const mockBack = jest.fn();
-jest.mock('expo-router', () => ({ usePathname: () => mockPath, useSegments: () => mockSegments ?? (mockPath === '/' ? ['(tabs)'] : mockPath.split('/').filter(Boolean)), useLocalSearchParams: () => ({}), useRouter: () => ({ navigate: mockNavigate, push: mockPush, canGoBack: () => true, back: mockBack }) }));
+const mockNavigate = jest.fn(); const mockPush = jest.fn(); const mockBack = jest.fn(); const mockReplace = jest.fn();
+let mockCanGoBack = true;
+let mockCartCount = 2;
+jest.mock('expo-router', () => ({ usePathname: () => mockPath, useSegments: () => mockSegments ?? (mockPath === '/' ? ['(tabs)'] : mockPath.split('/').filter(Boolean)), useLocalSearchParams: () => ({}), useRouter: () => ({ navigate: mockNavigate, push: mockPush, canGoBack: () => mockCanGoBack, back: mockBack, replace: mockReplace }) }));
 jest.mock('../../features/catalog/hooks/useMeals', () => ({ useSiteSettings: () => ({ data: { home_quick_meals_card_enabled: false, healthy_snacks_enabled: true, functional_training_customer_enabled: true } }) }));
-jest.mock('../../features/cart/store/cart.store', () => ({ useCartStore: (fn: (state: unknown) => unknown) => fn({ totalItems: 2 }) }));
+jest.mock('../../features/cart/store/cart.store', () => ({ useCartStore: (fn: (state: unknown) => unknown) => fn({ totalItems: mockCartCount, items: [] }) }));
+jest.mock('../../features/snacks/hooks/useSnacks', () => ({ useInfiniteSnacks: () => ({ data: { pages: [] } }), useSnackCategories: () => ({ data: [] }), useSnack: () => ({ data: undefined }) }));
+jest.mock('../../features/catalog/components/ProductReviews', () => ({ ProductReviews: () => null }));
 jest.mock('../../features/auth/store/auth.store', () => ({ useAuthStore: (fn: (state: unknown) => unknown) => fn({ isAuthenticated: false }) }));
 jest.mock('../../features/auth/api/auth.api', () => ({ authApi: { sendPhoneOTP: jest.fn() } }));
 jest.mock('./PlatformIcon', () => ({ PlatformIcon: () => null }));
@@ -21,7 +26,7 @@ jest.mock('react-native-safe-area-context', () => {
   const R = jest.requireActual('react'); const C = R.createContext({ top: 40, bottom: 20, left: 0, right: 0 });
   return { SafeAreaInsetsContext: C, useSafeAreaInsets: () => R.useContext(C) };
 });
-beforeEach(() => { mockSegments = undefined; });
+beforeEach(() => { mockSegments = undefined; mockCanGoBack = true; mockCartCount = 2; });
 
 it('never mounts navigation on the root splash, then reveals it for resolved Home without remounting content', () => {
   mockPath = '/'; mockSegments = [];
@@ -49,13 +54,41 @@ it('keeps navigation hidden during deep-link resolution and on the resolved logi
   expect(screen.queryByTestId('persistent-bottom-navigation')).toBeNull();
 });
 
-it.each(['/', '/snacks', '/catalog', '/menu', '/training', '/dietitian', '/consult', '/functional-training'])('owns exactly one header and tab bar on main browsing route %s', (path) => {
+it.each(['/', '/catalog', '/menu', '/training', '/dietitian', '/consult', '/functional-training'])('owns exactly one header and tab bar on main browsing route %s', (path) => {
   mockPath = path; render(<CustomerShell><Text>Route content</Text></CustomerShell>);
   expect(screen.getAllByTestId('customer-top-navigation')).toHaveLength(1);
   expect(screen.getAllByTestId('persistent-bottom-navigation')).toHaveLength(1);
   expect(screen.getAllByLabelText('HealthyOme')).toHaveLength(1);
   expect(screen.getAllByRole('tab')).toHaveLength(5);
   expect(screen.getByLabelText('Cart, 2 items')).toBeTruthy();
+});
+it.each([0, 2])('renders the actual Snacks route with one local cart for %i items, Back and no shared branded header', (count) => {
+  mockPath = '/snacks'; mockSegments = ['(tabs)', 'snacks'];
+  mockCartCount = count;
+  render(<CustomerShell><SnacksScreen /></CustomerShell>);
+  expect(screen.queryByTestId('customer-top-navigation')).toBeNull();
+  expect(screen.queryByLabelText('HealthyOme')).toBeNull();
+  expect(screen.getAllByTestId('snacks-catalog-header')).toHaveLength(1);
+  expect(screen.getAllByRole('button', { name: /cart/i })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: `Cart, ${count} items` })).toBeTruthy();
+  expect(screen.queryByText('View Cart')).toBeNull();
+  expect(screen.getAllByRole('button', { name: 'Go back' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: `Cart, ${count} items` })).toHaveStyle({ minHeight: 48, minWidth: 48 });
+  expect(screen.getByTestId('customer-route-content')).toHaveStyle({ paddingTop: 40, paddingBottom: 0 });
+  expect(screen.getByTestId('snacks-catalog-gradient')).toHaveStyle({ paddingTop: 8 });
+  expect(screen.getByTestId('persistent-bottom-navigation')).toHaveStyle({ paddingBottom: 20 });
+  expect(screen.getByRole('tab', { name: 'Snacks' })).toHaveProp('accessibilityState', { selected: true });
+  fireEvent.press(screen.getByRole('button', { name: `Cart, ${count} items` }));
+  expect(mockNavigate).toHaveBeenCalledWith('/cart');
+  fireEvent.press(screen.getByRole('button', { name: 'Go back' }));
+  expect(mockBack).toHaveBeenCalledTimes(1);
+});
+it('keeps a cold-linked Snacks catalogue escapable to Home without navigation history', () => {
+  mockPath = '/snacks'; mockSegments = ['snacks', 'index']; mockCanGoBack = false;
+  render(<CustomerShell><SnacksScreen /></CustomerShell>);
+  expect(screen.getAllByRole('button', { name: 'Cart, 2 items' })).toHaveLength(1);
+  fireEvent.press(screen.getByRole('button', { name: 'Go back' }));
+  expect(mockReplace).toHaveBeenCalledWith('/(tabs)');
 });
 it.each(['/login', '/verify', '/(auth)/login', '/checkout', '/consult/health', '/product-review/snack/8', '/subscription/plans/test', '/subscription/create', '/cart', '/profile-pages/edit', '/functional-training/trainer', '/orders/my/8'])('removes redundant shell chrome for focused/detail route %s', (path) => {
   mockPath = path; render(<CustomerShell><Text>Focused content</Text></CustomerShell>);
