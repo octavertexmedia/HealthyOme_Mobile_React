@@ -1,14 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   StyleSheet, Image, Dimensions, RefreshControl, Modal, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useInfiniteSnacks, useSnackCategories } from '../../src/features/snacks/hooks/useSnacks';
+import { useInfiniteSnacks, useSnackCategories, useSnack } from '../../src/features/snacks/hooks/useSnacks';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { colors, spacing, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
@@ -16,6 +16,7 @@ import { useDebounce } from '../../src/shared/utils/useDebounce';
 import { FastList } from '../../src/shared/components/FastList';
 import type { SnackItem } from '../../src/features/snacks/types/snack.types';
 import { ProductReviews } from '../../src/features/catalog/components/ProductReviews';
+import { CustomerFeatureGate } from '../../src/features/catalog/components/CustomerFeatureGate';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - spacing.xl * 2 - spacing.md) / 2;
@@ -34,6 +35,10 @@ const num = (v: unknown): number | null => {
 const cartIdFor = (snackId: number) => `snack-${snackId}`;
 
 export default function SnacksScreen() {
+  return <CustomerFeatureGate feature="snacks"><EnabledSnacksScreen /></CustomerFeatureGate>;
+}
+
+function EnabledSnacksScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const addItem = useCartStore((s) => s.addItem);
@@ -47,6 +52,11 @@ export default function SnacksScreen() {
   const [activeCategory, setActiveCategory] = useState<number | typeof ALL_CATEGORY>(ALL_CATEGORY);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<SnackItem | null>(null);
+  const params = useLocalSearchParams<{ snackId?: string }>();
+  const requestedId = Number(params.snackId);
+  const detail = useSnack(Number.isSafeInteger(requestedId) && requestedId > 0 ? requestedId : 0);
+  useEffect(() => { if (detail.data && requestedId > 0) setSelectedItem(detail.data); }, [detail.data, requestedId]);
+  const closeItem = () => { setSelectedItem(null); router.setParams({ snackId: undefined }); };
 
   // Server search runs only after the user pauses typing for 300ms.
   const debouncedSearch = useDebounce(search, 300);
@@ -172,18 +182,18 @@ export default function SnacksScreen() {
     const description = selectedItem.description || selectedItem.excerpt;
 
     return (
-      <Modal visible animationType="fade" transparent onRequestClose={() => setSelectedItem(null)}>
+      <Modal visible animationType="fade" transparent onRequestClose={closeItem}>
         <BlurView intensity={20} tint="dark" style={styles.modalBackdrop}>
           <TouchableOpacity
             style={StyleSheet.absoluteFillObject}
             activeOpacity={1}
-            onPress={() => setSelectedItem(null)}
+            onPress={closeItem}
           />
         </BlurView>
 
         <View style={[styles.modalSheetWrap, { paddingBottom: insets.bottom }]}>
           <View style={styles.modalCloseWrap}>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setSelectedItem(null)}>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={closeItem}>
               <Ionicons name="close" size={24} color="#333" />
             </TouchableOpacity>
           </View>
@@ -252,7 +262,7 @@ export default function SnacksScreen() {
                     </View>
                   </View>
                 )}
-                <ProductReviews productType="snack" productId={selectedItem.id} />
+                <ProductReviews productType="snack" productId={selectedItem.id} onOpenEditor={closeItem} />
               </View>
             </ScrollView>
           </View>
@@ -326,6 +336,11 @@ export default function SnacksScreen() {
           ))}
         </ScrollView>
       </LinearGradient>
+
+      {requestedId > 0 && detail.isLoading && <ActivityIndicator accessibilityLabel="Loading selected snack" style={{ padding: 16 }} />}
+      {requestedId > 0 && detail.isError && <TouchableOpacity accessibilityRole="button" onPress={() => { void detail.refetch(); }} style={{ padding: 16 }}>
+        <Text>Could not load the selected snack. Retry</Text>
+      </TouchableOpacity>}
 
       {/* ─── SNACKS GRID ─── */}
       <FastList<SnackItem>

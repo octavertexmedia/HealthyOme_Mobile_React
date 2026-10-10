@@ -51,3 +51,21 @@ it('preserves request failures for the error/retry UI', async () => {
   jest.mocked(apiClient.get).mockRejectedValue(failure);
   await expect(reviewsApi.forProduct('snack', 8)).rejects.toBe(failure);
 });
+
+it('loads the signed-in customer review separately from public cache data', async () => {
+  const customer = { ...page, my_review: page.results[0] };
+  jest.mocked(apiClient.get).mockResolvedValue({ data: customer });
+  await expect(reviewsApi.forCustomer('snack', 8)).resolves.toEqual(customer);
+  expect(apiClient.get).toHaveBeenCalledWith('/product-reviews/snack/8/', { params: { page: 1 } });
+});
+
+it('uses the verified review create/edit POST contract with validated, trimmed input', async () => {
+  jest.mocked(apiClient.post).mockResolvedValue({ data: { ...page, my_review: page.results[0] } });
+  await reviewsApi.save('meal', 8, { rating: 4, comment: ' Fresh meal ' });
+  expect(apiClient.post).toHaveBeenCalledWith('/product-reviews/meal/8/', { rating: 4, comment: 'Fresh meal' });
+});
+
+it.each([{ rating: 0, comment: '' }, { rating: 6, comment: '' }, { rating: 2.5, comment: '' }, { rating: 5, comment: 'x'.repeat(2001) }])('rejects invalid review submissions locally', async (input) => {
+  await expect(reviewsApi.save('snack', 8, input)).rejects.toThrow();
+  expect(apiClient.post).not.toHaveBeenCalled();
+});

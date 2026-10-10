@@ -1,5 +1,14 @@
 # Customer app scope and remaining work — 2026-10-10
 
+Latest source status is in `PARITY_CHECKPOINT_2026-10-10.md` (base `17ebcc0`).
+Order-local checkout addresses, consultation health before payment, review
+create/edit/login-return, centralized flags and Training/Dietitian tabs are now
+implemented with fixture tests. Original brand images and existing-tool guest
+smoke/reference scripts are included. These replace the corresponding open
+source gaps below, but not their live/device acceptance requirements. The
+earlier evidence and inventory are retained for traceability; fresh aggregate
+results and APK provenance accompany the new artifact handoff.
+
 This is a source-level inventory, not a claim of completed device acceptance.
 The earlier native builds passed. Current public-review source changes pass
 lint, TypeScript, and 134 unit/contract/UI tests in 30 suites. Eight native-tool

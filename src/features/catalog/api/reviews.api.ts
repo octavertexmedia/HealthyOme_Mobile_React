@@ -20,8 +20,25 @@ const reviewsPageSchema = z.object({
 });
 
 export type ProductReviewsPage = z.infer<typeof reviewsPageSchema>;
+const customerReviewsSchema = reviewsPageSchema.extend({ my_review: reviewSchema.nullable() });
+const reviewInputSchema = z.object({ rating: z.number().int().min(1).max(5), comment: z.string().trim().max(2000) });
+
+function productPath(productType: ReviewProductType, productId: number) {
+  if (!['meal', 'snack'].includes(productType) || !Number.isSafeInteger(productId) || productId < 1) throw new Error('Invalid review product.');
+  return `/product-reviews/${productType}/${productId}/`;
+}
 
 export const reviewsApi = {
+  async forCustomer(productType: ReviewProductType, productId: number) {
+    const { data } = await apiClient.get<unknown>(productPath(productType, productId), { params: { page: 1 } });
+    return customerReviewsSchema.parse(data);
+  },
+  async save(productType: ReviewProductType, productId: number, input: { rating: number; comment: string }) {
+    const path = productPath(productType, productId);
+    const body = reviewInputSchema.parse(input);
+    const { data } = await apiClient.post<unknown>(path, body);
+    return customerReviewsSchema.parse(data);
+  },
   async forProduct(productType: ReviewProductType, productId: number, page = 1): Promise<ProductReviewsPage> {
     if (!['meal', 'snack'].includes(productType) || !Number.isSafeInteger(productId) || productId < 1) {
       throw new Error('Invalid review product.');

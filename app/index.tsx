@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { storage } from '../src/shared/storage/mmkv';
+import { BrandLockup } from '../src/shared/components/BrandLockup';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -33,12 +34,7 @@ export default function SplashScreen() {
     <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.logoContainer}>
-        {/* We reuse the logo from the header or any central asset */}
-        <Image 
-          source={require('../assets/images/healthy0me-logo.webp')} 
-          style={styles.logo} 
-          resizeMode="contain" 
-        />
+        <BrandLockup />
       </View>
     </View>
   );

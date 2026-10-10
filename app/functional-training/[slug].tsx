@@ -23,8 +23,13 @@ import {
 } from '../../src/features/functional-training/hooks/useFunctionalTraining';
 import { usePayment } from '../../src/features/payments/hooks/usePayment';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import { CustomerFeatureGate } from '../../src/features/catalog/components/CustomerFeatureGate';
 
 export default function TrainerDetailScreen() {
+  return <CustomerFeatureGate feature="training"><EnabledTrainerDetail /></CustomerFeatureGate>;
+}
+
+function EnabledTrainerDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { slug } = useLocalSearchParams<{ slug: string }>();

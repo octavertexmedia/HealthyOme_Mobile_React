@@ -1,5 +1,16 @@
 # Customer journey acceptance gaps — 10 October 2026
 
+## Latest source update
+
+See `PARITY_CHECKPOINT_2026-10-10.md` for the subsequent cohesive checkpoint
+based on `17ebcc0`: centralized flags and five-service navigation, order-local
+checkout address, health before consultation payment, review editor/login
+return, and original-brand assets are now implemented and fixture-tested.
+Its artifact handoff provides fresh checks and exact binary provenance. No
+production submission or full visual parity is claimed. The sections below
+retain the earlier public-review checkpoint evidence and historical gap list;
+items 3–5 are superseded where the new report explicitly marks completion.
+
 ## Current correction checkpoint
 
 This includes guest-flow corrections and public review browsing, not complete

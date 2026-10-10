@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { reviewsApi, type ReviewProductType } from '../api/reviews.api';
 import { borderRadius, colors, spacing, typography } from '../../../shared/theme';
 
 interface Props {
   productType: ReviewProductType;
   productId: number;
+  onOpenEditor?: () => void;
 }
 
 export function ProductReviews(props: Props) {
@@ -15,7 +17,8 @@ export function ProductReviews(props: Props) {
   return <ReviewPages key={`${props.productType}-${props.productId}`} {...props} />;
 }
 
-function ReviewPages({ productType, productId }: Props) {
+function ReviewPages({ productType, productId, onOpenEditor }: Props) {
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const { data, isPending, isError, isFetching, refetch } = useQuery({
     queryKey: ['productReviews', 'public', productType, productId, page],
@@ -29,6 +32,9 @@ function ReviewPages({ productType, productId }: Props) {
   return (
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.title}>Customer reviews</Text>
+      <TouchableOpacity accessibilityRole="button" onPress={() => { onOpenEditor?.(); router.push(`/product-review/${productType}/${productId}`); }} style={styles.button}>
+        <Text style={styles.action}>Write or edit a review</Text>
+      </TouchableOpacity>
       {isPending ? (
         <ActivityIndicator accessibilityLabel="Loading reviews" color={colors.primary} />
       ) : isError ? (

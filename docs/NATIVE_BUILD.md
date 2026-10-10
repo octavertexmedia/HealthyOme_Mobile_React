@@ -129,6 +129,14 @@ original server-dependent `HealthyOMe-debug.apk`.
 For local Android Emulator and iOS Simulator Maestro smoke tests, see
 `docs/QUALITY_AND_CLOUD_TESTING.md`. No cloud workflow or paid service is used.
 
+Maestro is not installed on the audited Mac; do not invoke or repeatedly retry
+it. The new `npm run test:guest-device` runner uses existing ADB and Node only,
+after the verified read-only APK has been installed and onboarding completed.
+`npm run capture:web-reference` uses installed Chrome in an isolated headless
+profile, blocking non-GET/HEAD requests. Neither installs prerequisites or
+exercises authenticated production writes. See
+`PARITY_CHECKPOINT_2026-10-10.md` for scope and blockers.
+
 ## Payment safety
 
 - The Razorpay public key ID comes from the backend; no payment secret belongs

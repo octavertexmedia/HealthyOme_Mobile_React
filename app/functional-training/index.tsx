@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CustomerFeatureGate } from '../../src/features/catalog/components/CustomerFeatureGate';
 import {
   resolveMediaUrl,
   type Trainer,
@@ -62,6 +63,10 @@ function TrainerCard({
 }
 
 export default function FunctionalTrainingScreen() {
+  return <CustomerFeatureGate feature="training"><EnabledTrainingScreen /></CustomerFeatureGate>;
+}
+
+function EnabledTrainingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 

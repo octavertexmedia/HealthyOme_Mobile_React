@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { storage } from '../../src/shared/storage/mmkv';
+import { BrandLockup } from '../../src/shared/components/BrandLockup';
 
 const { width, height } = Dimensions.get('window');
 
@@ -74,6 +75,7 @@ export default function OnboardingScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
+      <View style={{ position: 'absolute', top: Math.max(insets.top, 20) + 4, left: 16, zIndex: 5, padding: 6, borderRadius: 12, backgroundColor: '#fff' }}><BrandLockup /></View>
       <FlatList
         ref={flatListRef}
         data={SLIDES}

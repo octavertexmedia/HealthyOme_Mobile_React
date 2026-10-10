@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,6 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   resolveMediaUrl,
   slotStartISO,
@@ -22,14 +21,12 @@ import {
   type Dietician,
 } from '../../src/features/consultations/api/consultations.api';
 import {
-  consultKeys,
   useAvailability,
   useConsultPlans,
   useCreateBooking,
   useDieticians,
 } from '../../src/features/consultations/hooks/useConsult';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
-import { usePayment } from '../../src/features/payments/hooks/usePayment';
 
 function isoLocalDate(daysAhead: number): string {
   const d = new Date();
@@ -57,9 +54,7 @@ function formatSlotTime(slot: AvailabilitySlot): string {
 export default function ConsultBookingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const queryClient = useQueryClient();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const { pay, loading: paying } = usePayment();
 
   const rangeFrom = useMemo(() => isoLocalDate(0), []);
   const rangeTo = useMemo(() => isoLocalDate(29), []);
@@ -68,7 +63,8 @@ export default function ConsultBookingScreen() {
   const [selectedPlan, setSelectedPlan] = useState<ConsultPlan | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
-  const [pendingBookingId, setPendingBookingId] = useState<number | null>(null);
+  const [bookingInProgress, setBookingInProgress] = useState(false);
+  const bookingLock = useRef(false);
   const [notes, setNotes] = useState('');
 
   const dieticiansQuery = useDieticians();
@@ -112,21 +108,19 @@ export default function ConsultBookingScreen() {
   const price = selectedPlan?.price ?? 0;
 
   const doBooking = async () => {
+    if (bookingLock.current) return;
     if (!isAuthenticated) {
-      router.push('/(auth)/login' as any);
+      router.push({ pathname: '/(auth)/login', params: { redirect: '/consult/booking' } });
       return;
     }
-    if (!selectedDietician || !selectedPlan) {
-      Alert.alert('Pick a plan', 'Please choose a dietician and a consultation plan.');
+    if (!selectedDietician || !selectedPlan || !selectedSlot) {
+      Alert.alert('Pick a slot', 'Choose a dietician, plan and available time slot.');
       return;
     }
-    if (!selectedSlot) {
-      Alert.alert('Pick a slot', 'Please choose an available time slot.');
-      return;
-    }
+    const sessionRevision = useAuthStore.getState().sessionRevision;
+    bookingLock.current = true;
+    setBookingInProgress(true);
     try {
-      // Create the pending booking first, then settle it via the consult
-      // Razorpay order (server derives the amount from the booking's plan).
       const booking = await bookMutation.mutateAsync({
         dietician_slug: selectedDietician.id,
         dietician_name: selectedDietician.name,
@@ -134,53 +128,20 @@ export default function ConsultBookingScreen() {
         slot_start: slotStartISO(selectedSlot),
         notes: notes.trim() || undefined,
       });
-      setPendingBookingId(booking.id);
-
-      const result = await pay({
-        kind: 'consult',
-        order: { consult_booking_id: booking.id },
-      });
-
-      if (result.status === 'paid') {
-        queryClient.invalidateQueries({ queryKey: consultKeys.bookings });
-        availabilityQuery.refetch();
-        Alert.alert(
-          'Consultation booked',
-          `Your session with ${selectedDietician.name} is confirmed for ${formatSlotTime(selectedSlot)}.`,
-          [{ text: 'OK', onPress: () => router.replace('/consult/my' as any) }]
-        );
-      } else if (result.status === 'cancelled') {
-        queryClient.invalidateQueries({ queryKey: consultKeys.bookings });
-        Alert.alert(
-          'Payment cancelled',
-          'Your booking is reserved as pending. Complete payment from "My consultations".',
-          [{ text: 'OK', onPress: () => router.replace('/consult/my' as any) }]
-        );
-      } else if (result.error === 'payment_sdk_missing') {
-        queryClient.invalidateQueries({ queryKey: consultKeys.bookings });
-        Alert.alert(
-          'Booking reserved',
-          'Your slot is held as pending. Payments need an app update — complete it from "My consultations".',
-          [{ text: 'OK', onPress: () => router.replace('/consult/my' as any) }]
-        );
-      } else {
-        Alert.alert('Payment failed', result.error || 'Please try again.');
-      }
-    } catch (e: any) {
-      const code = e?.response?.data?.error;
-      if (code === 'slot_taken') {
-        Alert.alert('Slot taken', 'Someone just booked this slot — please pick another.');
-        availabilityQuery.refetch();
-        setSelectedSlot(null);
-      } else {
-        Alert.alert('Could not book', e?.response?.data?.error || e?.message || 'Try again.');
-      }
+      if (useAuthStore.getState().sessionRevision !== sessionRevision) return;
+      if (!Number.isSafeInteger(booking.id) || booking.id < 1) throw new Error('Invalid booking response');
+      // Only the booking ID travels in navigation. Health is collected and saved
+      // on the next private screen before payment can start.
+      router.push({ pathname: '/consult/health', params: { booking: String(booking.id) } });
+    } catch {
+      Alert.alert('Could not reserve your slot', 'Check My bookings before trying again. No payment was started.');
     } finally {
-      setPendingBookingId(null);
+      bookingLock.current = false;
+      setBookingInProgress(false);
     }
   };
 
-  const busy = bookMutation.isPending || paying || pendingBookingId !== null;
+  const busy = bookMutation.isPending || bookingInProgress;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -377,7 +338,7 @@ export default function ConsultBookingScreen() {
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.bookBtnText}>
-              Book{selectedPlan ? ` · ₹${price}` : ''}
+              Continue to health details{selectedPlan ? ` · ₹${price}` : ''}
             </Text>
           )}
         </TouchableOpacity>

@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { authApi } from '../../src/features/auth/api/auth.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import { BrandLockup } from '../../src/shared/components/BrandLockup';
 import { colors, spacing, borderRadius, typography } from '../../src/shared/theme';
 import Button from '../../src/shared/components/Button';
 import { safeAuthRedirect } from '../../src/features/auth/authRedirect';
@@ -114,6 +115,7 @@ export default function VerifyScreen() {
           <Ionicons name="close" size={28} color={colors.text.primary} />
         </TouchableOpacity>
 
+        <BrandLockup />
         <Text style={styles.title}>Verify OTP</Text>
         <Text style={styles.subtitle}>
           Enter the 6-digit code sent to{'\n'}

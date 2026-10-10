@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
   TextInput,
@@ -14,6 +14,8 @@ import { addressesApi } from '../../src/features/addresses/api/addresses.api';
 import { usePayment } from '../../src/features/payments/hooks/usePayment';
 import type { CreateOrderItem } from '../../src/features/payments/api/payments.api';
 import { useSiteSettings } from '../../src/features/catalog/hooks/useMeals';
+import { CheckoutAddressPicker } from '../../src/features/cart/CheckoutAddressPicker';
+import { checkoutAddress } from '../../src/features/cart/utils/checkoutAddress';
 import {
   checkoutQuoteCoversLines,
   checkoutQuoteBlockMessage,
@@ -23,15 +25,22 @@ import {
 } from '../../src/features/cart/utils/checkout';
 
 export default function CheckoutScreen() {
+  const revision = useAuthStore((state) => state.sessionRevision);
+  return <CheckoutContent key={revision} />;
+}
+
+function CheckoutContent() {
   const router = useRouter();
   const params = useLocalSearchParams<{ coupon?: string | string[] }>();
   const insets = useSafeAreaInsets();
   const { items, totalPrice, clearCart, updateQuantity } = useCartStore();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, sessionRevision } = useAuthStore();
   const { pay, loading: paying } = usePayment();
   const { data: siteSettings } = useSiteSettings();
 
   const [placing, setPlacing] = useState(false);
+  const placingRef = useRef(false);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
   const [includeCutlery, setIncludeCutlery] = useState(false);
   const [includeNapkins, setIncludeNapkins] = useState(false);
   const [sendWhatsAppUpdates, setSendWhatsAppUpdates] = useState(true);
@@ -52,15 +61,16 @@ export default function CheckoutScreen() {
   }, [promoCoupon]);
 
   const addressesQuery = useQuery({
-    queryKey: ['addresses'],
+    queryKey: ['addresses', user?.id, sessionRevision],
     queryFn: addressesApi.list,
     enabled: isAuthenticated,
+    gcTime: 0,
   });
 
-  const defaultAddress = useMemo(() => {
-    const list = addressesQuery.data ?? [];
-    return list.find((a) => a.is_default) ?? list[0];
-  }, [addressesQuery.data]);
+  const selectedAddress = checkoutAddress(addressesQuery.data ?? [], selectedAddressId);
+  useEffect(() => {
+    if (selectedAddressId === null && selectedAddress) setSelectedAddressId(selectedAddress.id);
+  }, [selectedAddressId, selectedAddress]);
 
   const email = user?.email?.trim() ?? '';
 
@@ -74,7 +84,8 @@ export default function CheckoutScreen() {
     projection,
   } = useCheckoutQuote({
     couponCode: couponCode || undefined,
-    addressId: defaultAddress?.id,
+    addressId: selectedAddress?.id,
+    enabled: Boolean(selectedAddress) && !addressesQuery.isError,
   });
   const itemTotal = quote?.subtotal ?? totalPrice;
   const discount = quote?.discount ?? 0;
@@ -86,6 +97,9 @@ export default function CheckoutScreen() {
   const hasUnsupportedItems = projection.unsupportedItems.length > 0;
   const customBowlServerEnabled = siteSettings?.custom_bowl_checkout_enabled === true;
   const couponRejected = Boolean(quote?.error?.includes('coupon'));
+  const checkoutFingerprint = JSON.stringify({ address: selectedAddress?.id, couponCode, lines: projection.lines, sessionRevision });
+  const currentCheckout = useRef(checkoutFingerprint);
+  currentCheckout.current = checkoutFingerprint;
 
   const removeCustomBowls = () => {
     for (const item of projection.customBowlItems) {
@@ -113,6 +127,7 @@ export default function CheckoutScreen() {
   };
 
   const startCheckout = async () => {
+    if (placingRef.current || paying) return;
     if (!isAuthenticated) {
       router.push({
         pathname: '/(auth)/login',
@@ -136,7 +151,7 @@ export default function CheckoutScreen() {
       );
       return;
     }
-    if (!defaultAddress) {
+    if (!selectedAddress || addressesQuery.isError) {
       Alert.alert('Add a delivery address', 'Please save an address before placing an order.', [
         { text: 'Add address', onPress: () => router.push('/profile-pages/addresses') },
         { text: 'Cancel', style: 'cancel' },
@@ -159,13 +174,21 @@ export default function CheckoutScreen() {
       return;
     }
 
+    placingRef.current = true;
     setPlacing(true);
+    const fingerprint = currentCheckout.current;
     try {
       // Revalidate immediately before creating a payment transaction so stale
       // totals, coupon status, minimum order and delivery-zone state cannot pass.
       const refreshed = await refreshQuote();
       const latestQuote = refreshed.data;
+      if (useAuthStore.getState().sessionRevision !== sessionRevision) return;
+      if (currentCheckout.current !== fingerprint) {
+        Alert.alert('Checkout changed', 'Confirm the selected address and cart, then try again.');
+        return;
+      }
       if (
+        refreshed.isError ||
         !latestQuote?.can_checkout ||
         !checkoutQuoteCoversLines(latestQuote, projection.lines)
       ) {
@@ -184,7 +207,7 @@ export default function CheckoutScreen() {
         order: {
           items: orderLines,
           replace: true,
-          address_id: defaultAddress.id,
+          address_id: selectedAddress.id,
           email,
           amount: latestQuote.payable_total,
           ...(couponCode ? { coupon_code: couponCode } : {}),
@@ -195,7 +218,7 @@ export default function CheckoutScreen() {
           },
         },
         fulfillment: {
-          address_id: defaultAddress.id,
+          address_id: selectedAddress.id,
           email,
           delivery_date: deliveryDate,
           ...(deliveryTimeSlot.trim()
@@ -213,6 +236,7 @@ export default function CheckoutScreen() {
         },
       });
 
+      if (useAuthStore.getState().sessionRevision !== sessionRevision) return;
       if (payRes.status === 'paid') {
         const orderId = payRes.order_ids[0];
         clearCart();
@@ -241,6 +265,7 @@ export default function CheckoutScreen() {
     } catch (error: unknown) {
       Alert.alert('Could not place order', getErrorMessage(error));
     } finally {
+      placingRef.current = false;
       setPlacing(false);
     }
   };
@@ -260,8 +285,10 @@ export default function CheckoutScreen() {
         ? 'Remove custom bowls to continue. This app version cannot safely submit them yet.'
         : 'Remove custom bowls to continue. Store settings do not currently allow bowl checkout.'
       : 'Remove unsupported cart items to continue.'
-    : !defaultAddress && isAuthenticated
-      ? 'Add a delivery address to continue.'
+    : addressesQuery.isError && isAuthenticated
+      ? 'Could not confirm your saved addresses. Retry before paying.'
+    : !selectedAddress && isAuthenticated
+      ? 'Choose a saved delivery address for this order.'
       : !email && isAuthenticated
         ? 'Add an email to your profile to continue.'
         : !isValidCheckoutDate(deliveryDate)
@@ -301,11 +328,11 @@ export default function CheckoutScreen() {
                 <View style={styles.cartItemBottomRow}>
                   <Text style={styles.cartItemPrice}>₹{item.price * item.qty}</Text>
                   <View style={styles.qtyControls}>
-                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.id, item.qty - 1)}>
+                    <TouchableOpacity disabled={busy} style={styles.qtyBtn} onPress={() => updateQuantity(item.id, item.qty - 1)}>
                       <Ionicons name="remove" size={18} color="#111" />
                     </TouchableOpacity>
                     <Text style={styles.qtyText}>{item.qty}</Text>
-                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.id, item.qty + 1)}>
+                    <TouchableOpacity disabled={busy} style={styles.qtyBtn} onPress={() => updateQuantity(item.id, item.qty + 1)}>
                       <Ionicons name="add" size={18} color="#111" />
                     </TouchableOpacity>
                   </View>
@@ -394,6 +421,10 @@ export default function CheckoutScreen() {
 
         <View style={styles.formSection}>
           <Text style={styles.formTitle}>Delivery details</Text>
+          {isAuthenticated && (addressesQuery.isLoading ? <ActivityIndicator accessibilityLabel="Loading addresses" /> : addressesQuery.isError ? (
+            <TouchableOpacity accessibilityRole="button" onPress={() => { void addressesQuery.refetch(); }}><Text>Could not load addresses. Retry addresses</Text></TouchableOpacity>
+          ) : <CheckoutAddressPicker addresses={addressesQuery.data ?? []} selectedId={selectedAddress?.id}
+            onSelect={setSelectedAddressId} busy={busy} onManage={() => router.push('/profile-pages/addresses')} />)}
           <Text style={styles.inputLabel}>Delivery date</Text>
           <TextInput
             value={deliveryDate}
@@ -446,12 +477,12 @@ export default function CheckoutScreen() {
               autoCorrect={false}
               maxLength={50}
               style={[styles.input, styles.couponInput]}
-              editable={!quoteLoading}
+              editable={!quoteLoading && !busy}
             />
             <TouchableOpacity
               style={[styles.applyButton, quoteLoading && styles.buttonDisabled]}
               onPress={applyCoupon}
-              disabled={quoteLoading}
+              disabled={quoteLoading || busy}
             >
               {quoteLoading && couponCode ? (
                 <ActivityIndicator size="small" color="#fff" />
@@ -531,22 +562,23 @@ export default function CheckoutScreen() {
             <Text numberOfLines={1} style={styles.addressText}>
               {addressesQuery.isLoading ? (
                 'Loading address…'
-              ) : defaultAddress ? (
+              ) : selectedAddress ? (
                 <>
-                  <Text style={{ fontWeight: '600', color: '#0B262F' }}>{defaultAddress.label || 'Home'}</Text>
-                  <Text style={{ color: '#6C6C6C' }}> – {defaultAddress.address}</Text>
+                  <Text style={{ fontWeight: '600', color: '#0B262F' }}>{selectedAddress.label || 'Home'}</Text>
+                  <Text style={{ color: '#6C6C6C' }}> – {selectedAddress.address}</Text>
                 </>
               ) : (
                 <Text style={{ color: '#C7463A' }}>Add a delivery address</Text>
               )}
             </Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/profile-pages/addresses')}>
-            <Text style={styles.changeText}>{defaultAddress ? 'Change' : 'Add'}</Text>
-          </TouchableOpacity>
+          {!isAuthenticated && <TouchableOpacity onPress={() => router.push({ pathname: '/(auth)/login', params: { redirect: '/checkout' } })}>
+            <Text style={styles.changeText}>Sign in</Text>
+          </TouchableOpacity>}
         </View>
 
         <TouchableOpacity
+          accessibilityRole="button" accessibilityLabel={isAuthenticated ? 'Proceed to payment' : 'Sign in to checkout'}
           style={[styles.payBtn, !canCheckout && { opacity: 0.55 }]}
           onPress={startCheckout}
           disabled={!canCheckout}

@@ -5,6 +5,8 @@ import { ProductReviews } from './ProductReviews';
 import { reviewsApi, type ProductReviewsPage, type ReviewProductType } from '../api/reviews.api';
 
 jest.mock('../api/reviews.api', () => ({ reviewsApi: { forProduct: jest.fn() } }));
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 const loadReviews = jest.mocked(reviewsApi.forProduct);
 const clients: QueryClient[] = [];
 const empty: ProductReviewsPage = { rating: null, count: 0, page: 1, has_more: false, results: [] };
@@ -17,17 +19,17 @@ const secondPage: ProductReviewsPage = {
   results: [{ id: 11, user_name: 'Customer', rating: 4, comment: 'Review 11', created_at: '2026-10-10' }],
 };
 
-function mount(productType: ReviewProductType = 'snack', productId = 8) {
+function mount(productType: ReviewProductType = 'snack', productId = 8, onOpenEditor?: () => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   clients.push(client);
   const ui = (type: ReviewProductType, id: number) => (
-    <QueryClientProvider client={client}><ProductReviews productType={type} productId={id} /></QueryClientProvider>
+    <QueryClientProvider client={client}><ProductReviews productType={type} productId={id} onOpenEditor={onOpenEditor} /></QueryClientProvider>
   );
   const view = render(ui(productType, productId));
   return { rerenderProduct: (type: ReviewProductType, id: number) => view.rerender(ui(type, id)) };
 }
 
-beforeEach(() => loadReviews.mockReset());
+beforeEach(() => { loadReviews.mockReset(); mockPush.mockReset(); });
 afterEach(() => { clients.splice(0).forEach((client) => client.clear()); });
 
 it('shows every returned review, aggregate rating, and forward/back pagination', async () => {
@@ -108,4 +110,14 @@ it('does not request reviews for an invalid product', () => {
   mount('meal', 0);
   expect(loadReviews).not.toHaveBeenCalled();
   expect(screen.queryByText('Customer reviews')).toBeNull();
+});
+
+it('dismisses the product modal before opening the editor or login boundary', async () => {
+  loadReviews.mockResolvedValue(empty);
+  const closeModal = jest.fn(() => expect(mockPush).not.toHaveBeenCalled());
+  mount('snack', 8, closeModal);
+  await screen.findByText('No reviews yet.');
+  fireEvent.press(screen.getByText('Write or edit a review'));
+  expect(closeModal).toHaveBeenCalledTimes(1);
+  expect(mockPush).toHaveBeenCalledWith('/product-review/snack/8');
 });

@@ -14,20 +14,17 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   type Booking,
   type BookingStatus,
   type ConsultPlan,
 } from '../../src/features/consultations/api/consultations.api';
 import {
-  consultKeys,
   useCancelBooking,
   useConsultPlans,
   useMyBookings,
   useReviewBooking,
 } from '../../src/features/consultations/hooks/useConsult';
-import { usePayment } from '../../src/features/payments/hooks/usePayment';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 
 const STATUS_COLOR: Record<BookingStatus, string> = {
@@ -58,8 +55,6 @@ function formatWhen(iso: string): string {
 export default function MyConsultationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const queryClient = useQueryClient();
-  const { pay, loading: paying } = usePayment();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const bookingsQuery = useMyBookings();
@@ -100,36 +95,8 @@ export default function MyConsultationsScreen() {
     );
   };
 
-  const onPay = async (b: Booking) => {
-    const price = priceFor(b);
-    Alert.alert(
-      'Complete payment',
-      `Pay${price != null ? ` ₹${price}` : ''} for your consultation with ${b.dietician_name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Pay now',
-          onPress: async () => {
-            const r = await pay({
-              kind: 'consult',
-              order: { consult_booking_id: b.id },
-            });
-            if (r.status === 'paid') {
-              queryClient.invalidateQueries({ queryKey: consultKeys.bookings });
-            } else if (r.status === 'failed') {
-              if (r.error === 'payment_sdk_missing') {
-                Alert.alert(
-                  'Update required',
-                  'Payments need an app update — please update the app to complete payment.'
-                );
-              } else {
-                Alert.alert('Payment failed', r.error);
-              }
-            }
-          },
-        },
-      ]
-    );
+  const onPay = (b: Booking) => {
+    router.push({ pathname: '/consult/health', params: { booking: String(b.id) } });
   };
 
   const openReview = (b: Booking) => {
@@ -154,7 +121,7 @@ export default function MyConsultationsScreen() {
   };
 
   const bookings = bookingsQuery.data ?? [];
-  const busy = paying || cancelMutation.isPending;
+  const busy = cancelMutation.isPending;
 
   if (!isAuthenticated) {
     return (

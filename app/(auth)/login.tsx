@@ -11,6 +11,7 @@ import { authApi } from '../../src/features/auth/api/auth.api';
 import { colors, spacing, borderRadius, typography } from '../../src/shared/theme';
 import Button from '../../src/shared/components/Button';
 import { safeAuthRedirect } from '../../src/features/auth/authRedirect';
+import { BrandLockup } from '../../src/shared/components/BrandLockup';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -75,10 +76,8 @@ export default function LoginScreen() {
 
           {/* Logo & Welcome */}
           <View style={styles.headerSection}>
-            <View style={styles.logoContainer}>
-              <Ionicons name="leaf" size={48} color={colors.primary} />
-            </View>
-            <Text style={styles.title}>Welcome to{'\n'}Healthy-O-Me</Text>
+            <BrandLockup />
+            <Text style={styles.title}>Welcome</Text>
             <Text style={styles.subtitle}>Sign in to order healthy meals, manage subscriptions, and earn rewards</Text>
           </View>
 

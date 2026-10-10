@@ -19,13 +19,14 @@ import {
 import type {
   HomeLayoutBlockMeal,
   PromoBanner,
-  SiteSettings,
 } from '../../src/features/catalog/types/meal.types';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { rewardsApi } from '../../src/features/rewards/api/rewards.api';
 import { addressesApi } from '../../src/features/addresses/api/addresses.api';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
+import { homeFeatures as getHomeFeatureFlags } from '../../src/features/catalog/customerFeatures';
+import { BrandLockup } from '../../src/shared/components/BrandLockup';
 
 const { width } = Dimensions.get('window');
 // compute card width to fit inside horizontal padding (20px each side)
@@ -39,21 +40,6 @@ type HomeFeatureFlags = {
   showFunctionalTraining: boolean;
   allowCustomBowls: boolean;
 };
-
-function getHomeFeatureFlags(settings?: SiteSettings): HomeFeatureFlags {
-  return {
-    showSubscription: settings?.home_subscription_card_enabled !== false,
-    showQuickMeals: Boolean(settings && settings.home_quick_meals_card_enabled !== false),
-    // Match the web fail-closed behavior: snacks are hidden unless the catalog
-    // is explicitly enabled, and the home card has its own visibility flag.
-    showSnacks:
-      settings?.healthy_snacks_enabled === true &&
-      settings?.home_healthy_snacks_card_enabled !== false,
-    showConsult: settings?.home_consult_card_enabled !== false,
-    showFunctionalTraining: settings?.functional_training_customer_enabled !== false,
-    allowCustomBowls: settings?.custom_bowl_checkout_enabled === true,
-  };
-}
 
 function normalizeCmsPath(link: string): string {
   const pathWithQuery = link.trim().replace(/^https?:\/\/[^/]+/i, '');
@@ -219,7 +205,8 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
+      <View style={{ paddingTop: insets.top, paddingHorizontal: 20, paddingBottom: 8, backgroundColor: '#fff' }}><BrandLockup /></View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4B8E3D" />}
@@ -231,7 +218,7 @@ export default function HomeScreen() {
           colors={['rgba(4, 54, 15, 1)', 'rgba(5, 74, 19, 1)']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.heroBanner, { paddingTop: Math.max(insets.top, 16) + 16, height: 190 + Math.max(insets.top, 16) }]}
+          style={[styles.heroBanner, { paddingTop: 16, height: 190 }]}
         >
           {/* Header inside Hero */}
           <View style={styles.headerRow}>
@@ -254,6 +241,9 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Account" onPress={() => router.push('/(tabs)/profile')} style={styles.pinCircle}>
+                <Ionicons name="person" size={20} color="#111" />
+              </TouchableOpacity>
               {isAuthenticated && (
                 <TouchableOpacity
                   style={styles.pointsPill}
