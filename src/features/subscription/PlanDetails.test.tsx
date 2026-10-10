@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler/jestSetup';
 import React from 'react';
 import { Image } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';

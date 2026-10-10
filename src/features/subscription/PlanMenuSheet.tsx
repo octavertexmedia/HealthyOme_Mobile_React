@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, findNodeHandle, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Animated, findNodeHandle, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initialWindowMetrics, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlanMenuContent, { type MenuFilters, type MenuSelection } from './PlanMenuContent';
 
@@ -25,12 +26,12 @@ export default function PlanMenuSheet({ visible, selection, onClose, onAfterClos
     statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}
     onShow={() => { const node = findNodeHandle(heading.current); if (node) AccessibilityInfo.setAccessibilityFocus(node); }}>
     {/* CustomerShell consumes route insets. A native modal needs its own real window insets. */}
-    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+    <GestureHandlerRootView style={styles.gestureRoot}><SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <MenuSurface visible={visible} onClose={onClose} heading={heading}>
         <PlanMenuContent visible={visible} selection={selection} filters={filters}
           onSelect={(patch) => setSaved({ identity, filters: { ...filters, ...patch } })} />
       </MenuSurface>
-    </SafeAreaProvider>
+    </SafeAreaProvider></GestureHandlerRootView>
   </Modal>;
 }
 function MenuSurface({ visible, onClose, heading, children }: {
@@ -40,31 +41,24 @@ function MenuSurface({ visible, onClose, heading, children }: {
   const { height } = useWindowDimensions();
   const offset = useRef(new Animated.Value(0)).current;
   useEffect(() => { if (visible) offset.setValue(0); }, [visible, offset]);
-  const pan = useMemo(() => PanResponder.create({
-    // Claim the dedicated handle immediately; text descendants must not own
-    // the start of a drag. The close button is a sibling outside this region.
-    onStartShouldSetPanResponder: () => true,
-    onStartShouldSetPanResponderCapture: () => true,
-    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-    onMoveShouldSetPanResponderCapture: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-    onPanResponderTerminationRequest: () => false,
-    onPanResponderGrant: () => offset.stopAnimation(),
-    onPanResponderMove: (_, gesture) => offset.setValue(Math.max(0, gesture.dy)),
-    onPanResponderRelease: (_, gesture) => {
-      if (dismissMenuGesture(gesture.dy, gesture.vy)) onClose();
+  const pan = useMemo(() => Gesture.Pan().runOnJS(true).activeOffsetY(6).failOffsetX([-30, 30])
+    .onStart(() => offset.stopAnimation())
+    .onUpdate((event) => offset.setValue(Math.max(0, event.translationY)))
+    .onEnd((event, succeeded) => {
+      // Native gesture velocity is points/second; the shared policy uses points/ms.
+      if (succeeded && dismissMenuGesture(event.translationY, event.velocityY / 1000)) onClose();
       else Animated.spring(offset, { toValue: 0, useNativeDriver: true }).start();
-    },
-    onPanResponderTerminate: () => Animated.spring(offset, { toValue: 0, useNativeDriver: true }).start(),
-  }), [offset, onClose]);
+    })
+    .onFinalize((_event, succeeded) => { if (!succeeded) Animated.spring(offset, { toValue: 0, useNativeDriver: true }).start(); }), [offset, onClose]);
   return <View style={styles.overlay}>
     <Pressable testID="menu-backdrop" accessibilityRole="button" accessibilityLabel="Dismiss day-wise menu" onPress={onClose} style={StyleSheet.absoluteFill} />
     <Animated.View testID="day-menu-sheet" accessibilityViewIsModal onAccessibilityEscape={onClose}
       style={[styles.sheet, { height: height * 0.86, maxHeight: Math.max(180, height - insets.top - 24), paddingLeft: insets.left, paddingRight: insets.right, transform: [{ translateY: offset }] }]}>
       <View style={styles.header}>
-        <View testID="menu-drag-handle" collapsable={false} {...pan.panHandlers}>
+        <GestureDetector gesture={pan}><View testID="menu-drag-handle" collapsable={false}>
           <View style={styles.grabber} />
           <Text ref={heading} accessibilityRole="header" style={styles.title}>Day-wise menu</Text>
-        </View>
+        </View></GestureDetector>
         <Pressable accessibilityRole="button" accessibilityLabel="Close day-wise menu" onPress={onClose} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
       </View>
       <ScrollView nestedScrollEnabled contentContainerStyle={[styles.body, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>{children}</ScrollView>
@@ -72,6 +66,7 @@ function MenuSurface({ visible, onClose, heading, children }: {
   </View>;
 }
 const styles = StyleSheet.create({
+  gestureRoot: { flex: 1 },
   overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000066' },
   sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   header: { paddingHorizontal: 16, paddingTop: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
