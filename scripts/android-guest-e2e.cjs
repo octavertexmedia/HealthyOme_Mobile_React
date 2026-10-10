@@ -9,6 +9,7 @@ const adb = process.env.HEALTHYOME_ADB || '/Users/manishkumar/Library/Android/sd
 const serial = process.env.HEALTHYOME_ANDROID_SERIAL;
 const output = path.join(project, 'artifacts', 'e2e-guest');
 const steps = [];
+let latestXml = '';
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function command(args, binary = false) {
   return execFileSync(adb, ['-s', serial, ...args], { encoding: binary ? undefined : 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 });
@@ -22,6 +23,7 @@ async function inspect(name, expected, chrome = primary) {
   await wait(3500);
   command(['shell', 'uiautomator', 'dump', '/sdcard/healthyome-guest-e2e.xml']);
   const xml = command(['shell', 'cat', '/sdcard/healthyome-guest-e2e.xml']);
+  latestXml = xml;
   if (hasText(xml, 'Logout')) throw new Error('Authenticated content detected; no screenshot captured.');
   for (const text of expected) if (!hasText(xml, text)) throw new Error(`${name}: expected public UI text was not found: ${text}`);
   const brands = (xml.match(/content-desc="HealthyOme"/g) || []).length;
@@ -34,6 +36,15 @@ async function inspect(name, expected, chrome = primary) {
   fs.writeFileSync(path.join(output, `${name}.png`), command(['exec-out', 'screencap', '-p'], true));
   steps.push({ name, passed: true, expected, brandCount: brands, globalHeader, tabs });
 }
+function bounds(label) {
+  const node = latestXml.match(/<node\b[^>]*>/g)?.find((item) => item.includes(`content-desc="${label}"`) || item.includes(`text="${label}"`));
+  const match = node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+  if (!match) throw new Error(`Native control not found: ${label}. No retry performed.`);
+  const [, x1, y1, x2, y2] = match.map(Number);
+  if (x2 <= x1 || y2 <= y1) throw new Error(`Native control is outside the viewport: ${label}.`);
+  return { x: Math.round((x1 + x2) / 2), y: Math.round((y1 + y2) / 2), node };
+}
+function tap(label) { const { x, y } = bounds(label); command(['shell', 'input', 'tap', String(x), String(y)]); }
 function open(route) {
   command(['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', `healthyome://${route}`, '-n', `${config.android.package}/.MainActivity`]);
 }
@@ -50,6 +61,29 @@ async function main() {
   await inspect('subscriptions', ['Subscription Meals', 'Pick a category'], secondaryList);
   open('subscription/plans/healthy-home-style-lunch-meals');
   await inspect('subscription-detail', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
+  tap('View day-wise menu schedule');
+  await inspect('menu-sheet-from-button', ['Day-wise menu', 'India time', 'All published dates', 'Close day-wise menu'], detail);
+  // Read the actual native label: Hermes and desktop ICU may differ in punctuation.
+  const dateLabel = latestXml.match(/content-desc="((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[^"<>]+\d{4})"/)?.[1];
+  if (!dateLabel) throw new Error('No visible native date choice was found. No retry performed.');
+  tap(dateLabel);
+  await inspect('menu-sheet-selected-date', ['Day-wise menu', dateLabel], detail);
+  tap('Close day-wise menu');
+  await inspect('menu-sheet-close', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
+  tap('View day-wise menu schedule');
+  await inspect('menu-sheet-reopen', ['Day-wise menu', dateLabel], detail);
+  if (!bounds(dateLabel).node.includes('selected="true"')) throw new Error('Menu date selection was lost on reopening.');
+  command(['shell', 'input', 'keyevent', '4']);
+  await inspect('menu-sheet-back', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
+  tap('View day-wise menu schedule');
+  await inspect('menu-sheet-before-swipe', ['Day-wise menu'], detail);
+  const drag = bounds('Day-wise menu');
+  command(['shell', 'input', 'swipe', String(drag.x), String(drag.y), String(drag.x), String(drag.y + 450), '450']);
+  await inspect('menu-sheet-swipe', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
+  tap('View day-wise menu schedule');
+  await inspect('menu-sheet-after-swipe-reopen', ['Day-wise menu'], detail);
+  command(['shell', 'input', 'tap', '40', '100']);
+  await inspect('menu-sheet-backdrop', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
   open('subscription/menu/healthy-home-style-lunch-meals');
   await inspect('date-wise-menu', ['Day-wise menu', 'India time', 'All published dates', 'Lunch'], detail);
   open('subscription/create?plan=healthy-home-style-lunch-meals');

@@ -12,6 +12,7 @@ jest.mock('@tanstack/react-query', () => ({ useQuery: (options: { queryKey: stri
 jest.mock('../auth/store/auth.store', () => ({ useAuthStore: (fn: (state: unknown) => unknown) => fn({ isAuthenticated: false }) }));
 jest.mock('./api/subscription.api', () => ({ subscriptionApi: {} }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('react-native-safe-area-context', () => jest.requireActual('react-native-safe-area-context/jest/mock').default);
 jest.mock('../../shared/components/PlatformIcon', () => ({ PlatformIcon: () => null }));
 jest.mock('../cart/store/cart.store', () => ({ useCartStore: (select: (state: unknown) => unknown) => select({ totalItems: 0 }) }));
 beforeEach(() => {
@@ -25,14 +26,23 @@ it('always opens backend dates even when marketing config has a static menu card
   expect(screen.getByText('Lunch: Published lunch')).toBeTruthy();
   expect(screen.getByText('Quick subscribe · ₹239.5')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: 'View day-wise menu schedule' }));
-  expect(mockPush).toHaveBeenCalledWith({ pathname: '/subscription/menu/[slug]', params: { slug: 'test-plan', planId: '1', categoryId: '2', mealTimeId: '2' } });
+  expect(screen.getByRole('button', { name: 'Close day-wise menu' })).toBeTruthy();
+  expect(screen.getByText('Veg · Lunch')).toBeTruthy();
+  expect(screen.queryByText('Category')).toBeNull();
+  expect(screen.queryByText('Meal slot')).toBeNull();
+  expect(screen.queryByRole('radio', { name: 'Veg' })).toBeNull();
+  expect(mockPush).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole('button', { name: 'Close day-wise menu' }));
+  expect(screen.getByRole('button', { name: 'View day-wise menu schedule' })).toBeTruthy();
+  expect(screen.getByText('Quick subscribe · ₹239.5')).toBeTruthy();
 });
 it('opens the day-wise schedule when a plan uses list mode, without inventing a rating', () => {
   mockData.meal_plan_type.available_menu_view = 'list'; render(<PlanDetails />);
   expect(screen.queryByText(/4\.8/)).toBeNull();
   expect(screen.getByText('Lunch: Published lunch')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: 'View day-wise menu schedule' }));
-  expect(mockPush).toHaveBeenCalledWith({ pathname: '/subscription/menu/[slug]', params: { slug: 'test-plan', planId: '1', categoryId: '2', mealTimeId: '2' } });
+  expect(screen.getByRole('button', { name: 'Close day-wise menu' })).toBeTruthy();
+  expect(mockPush).not.toHaveBeenCalled();
 });
 it('preserves a selected price-row identity into customization', () => {
   render(<PlanDetails />); fireEvent.press(screen.getByText('1 Day Trial · Veg'));

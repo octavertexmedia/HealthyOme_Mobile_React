@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, ActivityIndicator, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, findNodeHandle, View, Text, ActivityIndicator, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -9,10 +9,15 @@ import { defaultBrowsePlan } from './browsePolicy';
 import { filterMenuDays, formatMenuDate, menuDateRange, menuQueryKey } from './menuSchedule';
 import Button from '../../shared/components/Button';
 import { ScreenHeader } from '../../shared/components/ScreenHeader';
+import PlanMenuSheet from './PlanMenuSheet';
 
-export default function SubscriptionPlanDetails() {
+export default function SubscriptionPlanDetails({ menuInitiallyOpen = false, onMenuDismiss }: { menuInitiallyOpen?: boolean; onMenuDismiss?: () => void } = {}) {
   const router = useRouter();
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug, planId, categoryId, mealTimeId, date } = useLocalSearchParams<{ slug: string; planId?: string; categoryId?: string; mealTimeId?: string; date?: string }>();
+  const [menuOpen, setMenuOpen] = useState(menuInitiallyOpen);
+  const menuTrigger = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
+  const restoreMenuFocus = useCallback(() => { const node = findNodeHandle(menuTrigger.current); if (node) AccessibilityInfo.setAccessibilityFocus(node); }, []);
+  const closeMenu = useCallback(() => { setMenuOpen(false); onMenuDismiss?.(); }, [onMenuDismiss]);
   const authenticated = useAuthStore((state) => state.isAuthenticated);
   const query = useQuery({ queryKey: ['subscription-overview', slug], queryFn: () => subscriptionApi.getOverview(slug), enabled: Boolean(slug), retry: false });
   const data = query.data;
@@ -31,6 +36,7 @@ export default function SubscriptionPlanDetails() {
     router.push({ pathname: '/subscription/create', params: { plan: slug, planId: String(quick.id), mealTimes: String(data?.meal_times[0]?.id ?? ''), quick: 'true' } });
   };
   return <View style={styles.screen}>
+    <View style={styles.screen} accessibilityElementsHidden={menuOpen} importantForAccessibility={menuOpen ? 'no-hide-descendants' : 'auto'}>
     <ScreenHeader title="Subscription Plans" fallback="/subscription/plans" />
     <ScrollView contentContainerStyle={styles.scroll}>
       {query.isLoading ? <ActivityIndicator accessibilityLabel="Loading plan" /> : query.isError || !data ? <View style={styles.section}>
@@ -47,8 +53,8 @@ export default function SubscriptionPlanDetails() {
             {!!data.stats?.subscriber_count && <Text style={styles.fact}>{data.stats.subscriber_count}{'\n'}Subscribers</Text>}
           </View>
         </View>
-        {planType?.show_available_menu !== false && <TouchableOpacity accessibilityRole="button" accessibilityLabel="View day-wise menu schedule" style={styles.section}
-          onPress={() => router.push({ pathname: '/subscription/menu/[slug]', params: { slug, ...(primary ? { planId: String(primary.id) } : {}), ...(primary?.category ? { categoryId: String(primary.category.id) } : {}), ...(data.meal_times[0] ? { mealTimeId: String(data.meal_times[0].id) } : {}) } })}>
+        {planType?.show_available_menu !== false && <TouchableOpacity ref={menuTrigger} accessibilityRole="button" accessibilityLabel="View day-wise menu schedule" accessibilityHint="Opens a dismissible menu sheet" style={styles.section}
+          onPress={() => setMenuOpen(true)}>
           <View style={styles.row}><Text style={styles.sectionTitle}>Available menu</Text><Ionicons name="chevron-forward" size={18} color="#6B7280" /></View>
           {schedule.isLoading ? <Text style={styles.body}>Loading published dates…</Text> : schedule.isError ? <Text style={styles.body}>Could not load the dated menu. Open to retry.</Text> : preview.length ? preview.map((day) => <View key={day.date} style={{ gap: 4 }}>
             <Text style={styles.sectionTitle}>{formatMenuDate(day.date)}</Text>
@@ -75,6 +81,9 @@ export default function SubscriptionPlanDetails() {
       <Button title="Customize plan" variant="secondary" disabled={blocked} onPress={customize} />
       {quick && <Text style={styles.caption}>Quick subscribe uses {quick.subscription_period.name} · {quick.category?.name} · one meal slot. Confirm your date before checkout.</Text>}
     </View>
+    </View>
+    <PlanMenuSheet visible={menuOpen} onClose={closeMenu} onAfterClose={restoreMenuFocus}
+      selection={{ slug, planId: planId ?? (primary ? String(primary.id) : undefined), categoryId: categoryId ?? (primary?.category ? String(primary.category.id) : undefined), mealTimeId: mealTimeId ?? (data?.meal_times[0] ? String(data.meal_times[0].id) : undefined), date }} />
   </View>;
 }
 const styles = StyleSheet.create({

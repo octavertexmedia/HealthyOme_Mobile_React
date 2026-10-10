@@ -26,7 +26,7 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => mockParams,
   Redirect: ({ href }: { href: string }) => { mockReplace(href); return null; },
 }));
-jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+jest.mock('react-native-safe-area-context', () => jest.requireActual('react-native-safe-area-context/jest/mock').default);
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('../../shared/components/PlatformIcon', () => ({ PlatformIcon: () => null }));
 jest.mock('../cart/store/cart.store', () => ({ useCartStore: (select: (state: unknown) => unknown) => select({ totalItems: 0 }) }));
