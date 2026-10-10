@@ -50,6 +50,8 @@ async function main() {
   await inspect('subscriptions', ['Subscription Meals', 'Pick a category'], secondaryList);
   open('subscription/plans/healthy-home-style-lunch-meals');
   await inspect('subscription-detail', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
+  open('subscription/menu/healthy-home-style-lunch-meals');
+  await inspect('date-wise-menu', ['Day-wise menu', 'India time', 'All published dates', 'Lunch'], detail);
   open('subscription/create?plan=healthy-home-style-lunch-meals');
   await inspect('subscription-customize', ['Customize plan', 'Plan duration', 'Checkout'], detail);
   open('cart');

@@ -1,4 +1,5 @@
 import apiClient from '../../../shared/api/client';
+import { validateMenuSchedule, type MenuRange } from '../menuSchedule';
 
 // ── Nested serializer shapes (backend ALWAYS returns nested objects, never bare ids) ──
 export interface MealPlanTypeRef {
@@ -241,10 +242,10 @@ export const subscriptionApi = {
     const { data } = await apiClient.get<PlanOverview>('/subscriptions/meal-plan-overview/', { params: { slug }, publicRequest: true });
     return data;
   },
-  getMenuSchedule: async (slug: string, mealPlanTypeId: number): Promise<PlanMenuSchedule> => {
-    const { data } = await apiClient.get<PlanMenuSchedule>('/subscriptions/meal-plan-menu/', { params: { slug, meal_plan_type: mealPlanTypeId }, publicRequest: true });
-    if (data.slug !== slug || data.meal_plan_type_id !== mealPlanTypeId || !Array.isArray(data.days) || data.days.some((day) => !Array.isArray(day.meals))) throw new Error('Invalid menu schedule');
-    return data;
+  getMenuSchedule: async (slug: string, mealPlanTypeId: number, range?: MenuRange): Promise<PlanMenuSchedule> => {
+    // The endpoint supports identity/date bounds, not category or meal-time IDs.
+    const { data } = await apiClient.get<unknown>('/subscriptions/meal-plan-menu/', { params: { slug, meal_plan_type: mealPlanTypeId, ...range }, publicRequest: true });
+    return validateMenuSchedule(data, slug, mealPlanTypeId, range);
   },
   // Canonical plans endpoint (subscriptions.py:133). Flat array, NO pagination wrapper.
   getPlans: async (): Promise<SubscriptionPlan[]> => {

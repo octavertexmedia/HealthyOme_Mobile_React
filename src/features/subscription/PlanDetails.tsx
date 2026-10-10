@@ -1,12 +1,12 @@
-import React from 'react';
-import { View, Text, Image, ActivityIndicator, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, ActivityIndicator, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { subscriptionApi } from './api/subscription.api';
 import { useAuthStore } from '../auth/store/auth.store';
 import { defaultBrowsePlan } from './browsePolicy';
-import { getImageUrl } from '../../shared/utils/helpers';
+import { filterMenuDays, formatMenuDate, menuDateRange, menuQueryKey } from './menuSchedule';
 import Button from '../../shared/components/Button';
 import { ScreenHeader } from '../../shared/components/ScreenHeader';
 
@@ -17,9 +17,10 @@ export default function SubscriptionPlanDetails() {
   const query = useQuery({ queryKey: ['subscription-overview', slug], queryFn: () => subscriptionApi.getOverview(slug), enabled: Boolean(slug), retry: false });
   const data = query.data;
   const planType = data?.meal_plan_type;
-  const menuCard = getImageUrl(planType?.menu_card_image_url || planType?.menu_card_image);
-  const cardView = planType?.available_menu_view === 'card' && Boolean(menuCard);
   const primary = defaultBrowsePlan(data?.plans ?? []);
+  const range = useMemo(() => menuDateRange(), []);
+  const schedule = useQuery({ queryKey: menuQueryKey(slug, planType?.id, range), queryFn: () => subscriptionApi.getMenuSchedule(slug, planType!.id, range), enabled: Boolean(planType && planType.show_available_menu !== false), retry: false });
+  const preview = filterMenuDays(schedule.data?.days ?? [], { category: primary?.category?.name, mealTime: data?.meal_times[0]?.name }).filter((day) => day.meals.length).slice(0, 2);
   const quick = data?.plans.filter((plan) => plan.is_active && plan.category?.id === primary?.category?.id)
     .sort((a, b) => (a.subscription_period.days ?? 0) - (b.subscription_period.days ?? 0))[0];
   const blocked = !data || query.isError || data.can_subscribe === false;
@@ -46,17 +47,14 @@ export default function SubscriptionPlanDetails() {
             {!!data.stats?.subscriber_count && <Text style={styles.fact}>{data.stats.subscriber_count}{'\n'}Subscribers</Text>}
           </View>
         </View>
-        {planType?.show_available_menu !== false && <TouchableOpacity accessibilityRole="button" accessibilityLabel={cardView ? 'View menu card' : 'View day-wise menu schedule'} style={styles.section}
-          onPress={() => router.push({ pathname: '/subscription/menu/[slug]', params: { slug } })}>
+        {planType?.show_available_menu !== false && <TouchableOpacity accessibilityRole="button" accessibilityLabel="View day-wise menu schedule" style={styles.section}
+          onPress={() => router.push({ pathname: '/subscription/menu/[slug]', params: { slug, ...(primary ? { planId: String(primary.id) } : {}), ...(primary?.category ? { categoryId: String(primary.category.id) } : {}), ...(data.meal_times[0] ? { mealTimeId: String(data.meal_times[0].id) } : {}) } })}>
           <View style={styles.row}><Text style={styles.sectionTitle}>Available menu</Text><Ionicons name="chevron-forward" size={18} color="#6B7280" /></View>
-          {cardView ? <Image accessibilityLabel={`${planType?.name} menu card`} source={{ uri: menuCard }} resizeMode="contain" style={styles.menuCard} /> : <View style={styles.previewRow}>
-            {data.available_meals.slice(0, 3).map((meal) => <View key={meal.id} style={{ flex: 1 }}>
-              {meal.image ? <Image source={{ uri: getImageUrl(meal.image) }} style={styles.preview} /> : <View style={styles.preview} />}
-              <Text numberOfLines={2} style={styles.caption}>{meal.name}</Text>
-            </View>)}
-            {!data.available_meals.length && <Text style={styles.body}>The upcoming menu is being prepared.</Text>}
-          </View>}
-          <Text style={styles.body}>Meals change daily and are curated using seasonal ingredients.</Text>
+          {schedule.isLoading ? <Text style={styles.body}>Loading published dates…</Text> : schedule.isError ? <Text style={styles.body}>Could not load the dated menu. Open to retry.</Text> : preview.length ? preview.map((day) => <View key={day.date} style={{ gap: 4 }}>
+            <Text style={styles.sectionTitle}>{formatMenuDate(day.date)}</Text>
+            {day.meals.map((meal, index) => <Text key={`${meal.id}-${index}`} style={styles.body}>{meal.meal_time_name || 'Slot not published'}: {meal.name.trim()}</Text>)}
+          </View>) : <Text style={styles.body}>No published menu for the selected category and slot.</Text>}
+          <Text style={styles.body}>View dates, meal slots and published nutrition · India time</Text>
         </TouchableOpacity>}
         {!!planType?.marketing_features?.length && <View style={styles.section}><Text style={styles.sectionTitle}>About Service</Text>{planType.marketing_features.map((feature) => <Text key={feature} style={styles.body}>• {feature}</Text>)}</View>}
         <View style={styles.section}><Text style={styles.sectionTitle}>Order timings</Text>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, View } from 'react-native';
+import { Image, View, useWindowDimensions } from 'react-native';
 
 export function brandLayout(compact: boolean, availableWidth = Number.POSITIVE_INFINITY) {
   const icon = compact ? 34 : 50; const word = compact ? 112 : 130;
@@ -8,6 +8,13 @@ export function brandLayout(compact: boolean, availableWidth = Number.POSITIVE_I
 }
 /** Preserve supplied brand pixels; responsive 1.5× target without cropping or tint. */
 export function BrandLockup({ compact = false, availableWidth }: { compact?: boolean; availableWidth?: number }) {
+  const { width, height } = useWindowDimensions();
+  if (!compact) {
+    const size = Math.max(0, Math.min(300, availableWidth ?? width - 48, height * 0.30));
+    return <View accessible accessibilityRole="image" accessibilityLabel="HealthyOme" style={{ alignItems: 'center', backgroundColor: 'transparent' }}>
+      <Image accessible={false} source={require('../../../assets/images/branding/healthyome-login.png')} style={{ width: size, height: size, backgroundColor: 'transparent' }} resizeMode="contain" />
+    </View>;
+  }
   const box = brandLayout(compact, availableWidth);
   return <View accessible accessibilityRole="image" accessibilityLabel="HealthyOme" style={{ flexDirection: 'row', alignItems: 'center', gap: box.gap, backgroundColor: 'transparent' }}>
     <Image accessible={false} source={require('../../../assets/images/branding/healthyome-logo.png')} style={{ width: box.icon, height: box.icon, backgroundColor: 'transparent' }} resizeMode="contain" />

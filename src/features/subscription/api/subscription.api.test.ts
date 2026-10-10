@@ -38,3 +38,10 @@ it('rejects menu data for a mismatched plan or malformed days', async () => {
   jest.mocked(apiClient.get).mockResolvedValue({ data: { slug: 'test-plan', meal_plan_type_id: 8, days: [{ meals: null }] } });
   await expect(subscriptionApi.getMenuSchedule('test-plan', 8)).rejects.toThrow('Invalid menu schedule');
 });
+it('sends explicit India-local date bounds, without unsupported category/slot params', async () => {
+  const range = { from: '2026-10-10', to: '2026-11-07' };
+  const data = { slug: 'test-plan', meal_plan_type_id: 8, ...range, days: [] };
+  jest.mocked(apiClient.get).mockResolvedValue({ data });
+  await expect(subscriptionApi.getMenuSchedule('test-plan', 8, range)).resolves.toEqual(data);
+  expect(apiClient.get).toHaveBeenCalledWith('/subscriptions/meal-plan-menu/', { params: { slug: 'test-plan', meal_plan_type: 8, ...range }, publicRequest: true });
+});
