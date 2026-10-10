@@ -13,7 +13,7 @@ import PlanMenuSheet from './PlanMenuSheet';
 import { subscriptionSafety } from './safetyCopy';
 
 export const inlinePlanActions = (width: number, fontScale: number) => width >= 360 && fontScale <= 1.2;
-export default function SubscriptionPlanDetails({ menuInitiallyOpen = false, onMenuDismiss }: { menuInitiallyOpen?: boolean; onMenuDismiss?: () => void } = {}) {
+export default function SubscriptionPlanDetails({ menuInitiallyOpen = false }: { menuInitiallyOpen?: boolean } = {}) {
   const router = useRouter();
   const { width, fontScale } = useWindowDimensions();
   const inlineActions = inlinePlanActions(width, fontScale);
@@ -22,7 +22,7 @@ export default function SubscriptionPlanDetails({ menuInitiallyOpen = false, onM
   const [safetyOpen, setSafetyOpen] = useState(false);
   const menuTrigger = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
   const restoreMenuFocus = useCallback(() => { const node = findNodeHandle(menuTrigger.current); if (node) AccessibilityInfo.setAccessibilityFocus(node); }, []);
-  const closeMenu = useCallback(() => { setMenuOpen(false); onMenuDismiss?.(); }, [onMenuDismiss]);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const authenticated = useAuthStore((state) => state.isAuthenticated);
   const query = useQuery({ queryKey: ['subscription-overview', slug], queryFn: () => subscriptionApi.getOverview(slug), enabled: Boolean(slug), retry: false });
   const data = query.data;

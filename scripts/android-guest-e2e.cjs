@@ -45,7 +45,7 @@ function bounds(label) {
   if (!match) throw new Error(`Native control not found: ${label}. No retry performed.`);
   const [, x1, y1, x2, y2] = match.map(Number);
   if (x2 <= x1 || y2 <= y1) throw new Error(`Native control is outside the viewport: ${label}.`);
-  return { x: Math.round((x1 + x2) / 2), y: Math.round((y1 + y2) / 2), node };
+  return { x1, y1, x2, y2, x: Math.round((x1 + x2) / 2), y: Math.round((y1 + y2) / 2), node };
 }
 function tap(label) { const { x, y } = bounds(label); command(['shell', 'input', 'tap', String(x), String(y)]); }
 function open(route) {
@@ -87,7 +87,9 @@ async function main() {
   await inspect('menu-sheet-swipe', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
   tap('View day-wise menu schedule');
   await inspect('menu-sheet-after-swipe-reopen', ['Day-wise menu'], detail);
-  command(['shell', 'input', 'tap', '40', '100']);
+  // Derive a visible backdrop point; fixed y=100 can land inside the status bar.
+  const sheet = bounds('day-menu-sheet');
+  command(['shell', 'input', 'tap', String(sheet.x), String(Math.round(sheet.y1 * 0.65))]);
   await inspect('menu-sheet-backdrop', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
   open('subscription/menu/healthy-home-style-lunch-meals');
   await inspect('date-wise-menu', ['Day-wise menu', 'India time', 'All published dates', 'Lunch'], detail);

@@ -49,6 +49,16 @@ it('preserves a selected price-row identity into customization', () => {
   render(<PlanDetails />); fireEvent.press(screen.getByText('1 Day Trial · Veg'));
   expect(mockPush).toHaveBeenCalledWith({ pathname: '/subscription/create', params: { plan: 'test-plan', planId: '1' } });
 });
+it('closes and reopens a saved-link menu without unmounting or navigating away from its plan', () => {
+  render(<PlanDetails menuInitiallyOpen />);
+  expect(screen.getByRole('button', { name: 'Close day-wise menu' })).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'Close day-wise menu' }));
+  expect(screen.getByRole('button', { name: 'View day-wise menu schedule' })).toBeTruthy();
+  expect(screen.getByText('Quick subscribe · ₹239.5')).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'View day-wise menu schedule' }));
+  expect(screen.getByRole('button', { name: 'Close day-wise menu' })).toBeTruthy();
+  expect(mockPush).not.toHaveBeenCalled();
+});
 it('blocks both purchase actions on commercial unavailability or failed loads', () => {
   mockData.can_subscribe = false; render(<PlanDetails />);
   expect(screen.getByRole('button', { name: 'Customize plan' })).toBeDisabled();
