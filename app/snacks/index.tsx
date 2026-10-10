@@ -15,6 +15,7 @@ import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 import { useDebounce } from '../../src/shared/utils/useDebounce';
 import { FastList } from '../../src/shared/components/FastList';
 import type { SnackItem } from '../../src/features/snacks/types/snack.types';
+import { ProductReviews } from '../../src/features/catalog/components/ProductReviews';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - spacing.xl * 2 - spacing.md) / 2;
@@ -251,6 +252,7 @@ export default function SnacksScreen() {
                     </View>
                   </View>
                 )}
+                <ProductReviews productType="snack" productId={selectedItem.id} />
               </View>
             </ScrollView>
           </View>

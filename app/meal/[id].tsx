@@ -5,9 +5,9 @@ import {
 import { useRouter, useLocalSearchParams, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMeal, useSiteSettings } from '../../src/features/catalog/hooks/useMeals';
-import { reviewsApi, type MealReview } from '../../src/features/catalog/api/reviews.api';
+import { ProductReviews } from '../../src/features/catalog/components/ProductReviews';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { cartApi } from '../../src/features/cart/api/cart.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
@@ -39,13 +39,6 @@ function EnabledMealDetailScreen() {
 
   const isFavourite = useIsFavourite(mealId);
   const toggleFavourite = useToggleFavourite();
-
-  const reviewsQuery = useQuery<MealReview[]>({
-    queryKey: ['reviews', 'meal', mealId],
-    queryFn: () => reviewsApi.forMeal(mealId),
-    enabled: Number.isFinite(mealId),
-    staleTime: 60 * 1000,
-  });
 
   const addToServerCart = useMutation({
     mutationFn: (variables: { mealItemId: number; quantity: number }) =>
@@ -145,26 +138,7 @@ function EnabledMealDetailScreen() {
             ))}
           </View>
 
-          {/* Reviews */}
-          <Text style={styles.sectionTitle}>Reviews</Text>
-          {reviewsQuery.isLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: 12 }} />
-          ) : (reviewsQuery.data ?? []).length === 0 ? (
-            <Text style={styles.reviewEmpty}>No reviews yet — be the first after your order.</Text>
-          ) : (
-            (reviewsQuery.data ?? []).slice(0, 5).map((r) => (
-              <View key={r.id} style={styles.reviewCard}>
-                <View style={styles.reviewHeader}>
-                  <Text style={styles.reviewName}>{r.user_name || 'Customer'}</Text>
-                  <View style={styles.reviewStars}>
-                    <Ionicons name="star" size={12} color="#F5A623" />
-                    <Text style={styles.reviewRating}>{Number(r.rating).toFixed(1)}</Text>
-                  </View>
-                </View>
-                {r.comment ? <Text style={styles.reviewComment}>{r.comment}</Text> : null}
-              </View>
-            ))
-          )}
+          <ProductReviews productType="meal" productId={mealId} />
         </View>
       </ScrollView>
 
@@ -223,7 +197,7 @@ const styles = StyleSheet.create({
     position: 'absolute', right: spacing.lg, width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.9)', justifyContent: 'center', alignItems: 'center', ...shadows.md,
   },
-  content: { padding: spacing.xl },
+  content: { padding: spacing.xl, paddingBottom: 140 },
   category: { ...typography.body.xs, color: colors.primary, textTransform: 'uppercase', letterSpacing: 1 },
   name: { ...typography.heading.xl, color: colors.text.primary, marginTop: spacing.xs },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm },
@@ -233,7 +207,7 @@ const styles = StyleSheet.create({
   descSection: { marginTop: spacing.xxl },
   sectionTitle: { ...typography.heading.md, color: colors.text.primary, marginBottom: spacing.md, marginTop: spacing.lg },
   description: { ...typography.body.lg, color: colors.text.secondary, lineHeight: 24 },
-  nutritionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: 120 },
+  nutritionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   nutritionCard: {
     width: (width - spacing.xl * 2 - spacing.md * 2) / 3, backgroundColor: colors.surface,
     borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center',
@@ -261,22 +235,4 @@ const styles = StyleSheet.create({
   },
   addToCartText: { ...typography.button.lg, color: '#fff' },
 
-  reviewEmpty: { ...typography.body.md, color: colors.text.muted, marginBottom: 120 },
-  reviewCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.sm,
-  },
-  reviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  reviewName: { ...typography.body.md, color: colors.text.primary, fontWeight: '600' },
-  reviewStars: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  reviewRating: { ...typography.body.sm, color: colors.text.primary, fontWeight: '600' },
-  reviewComment: { ...typography.body.sm, color: colors.text.secondary, marginTop: 4, lineHeight: 18 },
 });

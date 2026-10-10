@@ -1,29 +1,32 @@
 # Customer app scope and remaining work — 2026-10-10
 
 This is a source-level inventory, not a claim of completed device acceptance.
-The earlier native builds passed; the follow-up customer changes pass lint,
-TypeScript, and 101 unit/contract/UI tests, plus eight native-tool fixture tests.
-The standalone Android test APK installed
-on an API 34 emulator and displayed its onboarding screen without a development
-server. This is a startup smoke check, not full customer acceptance. No
-authenticated transactional flow has been exercised against a live backend.
+The earlier native builds passed. Current public-review source changes pass
+lint, TypeScript, and 134 unit/contract/UI tests in 30 suites. Eight native-tool
+fixture tests passed at the prior checkpoint; they were not rerun here.
+The earlier standalone guest Android APK completed public subscription browsing
+and reached sign-in from Checkout. It predates the public-review follow-up.
+No authenticated transactional flow has been exercised against a live backend.
 
 See `CUSTOMER_JOURNEY_GAPS.md` for paired web/mobile journey evidence and the
-next acceptance milestone. Current development catalogue data is empty; startup
-and route presence do not establish a complete shopping journey.
+next acceptance milestone. Current production public catalogue GETs return data;
+API availability and route presence do not establish a complete shopping journey.
 
 Mobile branch: `codex/mobile-parity-fixes`.
-HEAD: `fffaba160e6036589535b73c3f161246cd387b9d`.
-This is the base commit; the delivery report identifies the later local
-checkpoint containing the implementation. The local backend was read as contract evidence at
+Public-review follow-up base: `1192006d42064cac91012d6a9929e1b87af2efaa`.
+The commit containing this checklist identifies the new source checkpoint.
+Public-review contract evidence is web `origin/main`
+`1669b5d57cb313a9b3e2afb3713f3f2b5ea59ea3` plus a live unauthenticated HTTP 200.
+Earlier local backend contract evidence was read at
 `4ea260f09cc94774dc219cfb0cb3a295522342f1`; its deployment parity is unverified.
 
 | Customer feature | Code status | Verification and remaining scope |
 | --- | --- | --- |
-| Onboarding and location | Existing customer screens and delivery-area selection | First onboarding screen verified on Android API 34; location and the remaining walkthrough are untested. |
+| Onboarding and location | Mandatory GPS/pickup selection removed; Skip/finish and legacy location route lead Home | Android Home/legacy-route check passed; no saved address or backend pickup record was changed. |
 | Home, banners and service links | Fixed CMS carousel, layout values, promo routes and visibility flags | Code checked; backend-content variations and all links need device checks. |
 | Meal catalogue, filters and details | Present, with API response/image handling | Live catalogue, filter, dietary and availability edge cases untested. |
 | Snacks | Catalogue and cart support present | Live availability and mixed-cart E2E untested. |
+| Public product reviews | Shared meal-detail/snack-modal public rating/count/list, pagination and explicit loading/error/empty/retry UI added | Live snack review GET HTTP 200 (empty); 21 new API/UI tests cover populated pages, malformed responses, retry and product changes. Device acceptance and review create/edit/sign-in return UI remain open; no reviews submitted. |
 | Guest/account navigation | Fixed guest-safe account content and internal post-login redirects | Redirect rules covered by tests; authenticated navigation needs a test account. |
 | Phone and email OTP | Send/verify/resend APIs and login screens present | No OTP sent or verified during validation. |
 | Session restore and logout | Fixed token-backed restore, query-cache clearing, local cart cleanup and late-session response guards | Unit tests cover absent/failed/rotated tokens, remote logout failure and late responses. Health profile data is no longer persisted in AsyncStorage. |

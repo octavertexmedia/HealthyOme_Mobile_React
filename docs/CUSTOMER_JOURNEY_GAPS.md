@@ -2,8 +2,10 @@
 
 ## Current correction checkpoint
 
-This is a guest-flow correction, not complete web/mobile parity or a store release.
-Base mobile commit: `895180ba238564a055589560176c46a4a154c354`.
+This includes guest-flow corrections and public review browsing, not complete
+web/mobile parity or a store release.
+Base mobile commit for the public-review follow-up:
+`1192006d42064cac91012d6a9929e1b87af2efaa`.
 The source commit containing this report is the current checked checkpoint.
 
 The live healthyome.in walkthrough is the behavioral reference. Its browser was
@@ -37,6 +39,31 @@ The separately reviewed feature branch has not been merged by this mobile task.
 - Current production flags disable Quick Meals and enable Snacks. The native
   catalogue tab follows these flags. Disabled Menu/meal deep links return Home;
   quick-meal Home categories, strips and featured entries are hidden.
+- Meal details and the snack detail modal now share public customer reviews:
+  aggregate rating/count, all rows on each server page, Previous/Next controls,
+  explicit loading/error/empty states and an explicit Retry action. The old
+  authenticated `/reviews/{mealId}/` read and five-row truncation were removed.
+  Public requests omit credentials; personal `my_review` data is not retained.
+  Invalid/mismatched responses fail visibly instead of becoming “No reviews”.
+  Product/type changes reset pagination and use separate public query keys.
+  There is no review submit/edit control in this checkpoint.
+
+## Public-review contract evidence
+
+Read-only web `origin/main` at `1669b5d57cb313a9b3e2afb3713f3f2b5ea59ea3`
+defines `GET /product-reviews/{meal|snack}/{id}/?page=N`, ten rows per page,
+`rating`, `count`, `page`, `has_more`, `results`, and `my_review`.
+This main-branch contract was used, not the unmerged web feature branch.
+The public production snack list returned HTTP 200 and supplied snack ID 8;
+its public review GET returned HTTP 200 with count 0, page 1 and no own review.
+No credentials or customer identifiers were sent. Populated/paginated results
+and error recovery were verified with fixtures, not claimed as live data.
+
+Evidence: `artifacts/public-review-contract-check.json`,
+`artifacts/public-reviews-focused-tests.log`, and
+`artifacts/public-reviews-check.log`. These logs are local audit evidence;
+the source/tests and this checklist are committed. Existing APK/Simulator ZIP
+artifacts predate this follow-up. No binary was rebuilt or uploaded.
 
 ## Verified public production source
 
@@ -61,17 +88,25 @@ until an authenticated test scope is approved.
 
 ## Evidence and limitations
 
-- Lint and TypeScript pass. Jest: 113 tests in 28 suites. Native script tests: 8.
+- Current follow-up: lint and TypeScript pass; Jest: 134 tests in 30 suites.
+  Focused public-review/disabled-meal-route checks: 23 tests in 3 suites.
+  The 8 native script tests are prior checkpoint results, not reruns here.
 - Public Android categories, plan list, detail and customization rendered with
   real data. Tapping Checkout opened sign-in without creating a booking/order.
   See the accompanying guest runtime report for final APK and interaction status.
 - iOS runtime confirms guest state, the production base and read-only mode.
   Public categories/customization render, but an OS “Open in Healthy-O-Me?”
-  dialog obstructed visual acceptance. The user was asked to tap Open once;
-  macOS UI automation timed out and was not treated as a successful interaction.
+  dialog obstructs visual acceptance. The user was asked to tap Cancel; native
+  Mac preflight returned accessibilityTrusted=false/inputPostingAllowed=false.
+  No click was posted and no denied UI action was retried. Dependent acceptance
+  is paused; running simulators and Metro were not restarted for this follow-up.
 - One iOS Hermes SIGSEGV occurred during the editing/hot-reload session. Relaunch
-  restored the app; root cause is unresolved. Existing duplicate RCTSwiftUI
-  class/background-mode warnings remain release blockers to investigate.
+  restored the app. A later direct cold launch and one controlled full reload
+  passed without reproducing the crash; root cause remains unresolved. Existing
+  duplicate RCTSwiftUI class/background-mode warnings still need investigation.
+- New public-review touch, scroll and pagination behavior has not been accepted
+  on Android/iOS or a physical device. No simulator UI actions were attempted
+  in this follow-up, and Quick Meals remain disabled by live settings.
 - No OTP, account/address/health submission, order, booking, payment (including
   zero-rupee), fulfillment, refund, deployment or merge was performed.
 - Tests validate return-path preservation; actual post-login continuation is
@@ -92,9 +127,13 @@ until an authenticated test scope is approved.
 4. Move consultation health capture before payment. Current native booking
    still pays immediately after booking creation; the management health form
    is too late. Validate with mocks before any authorized account writes.
-5. Close referral capture, public product-review/error/pagination/write flows,
+5. Close referral capture and product-review create/edit/sign-in-return flows,
    account-entry auth boundaries, and the complete flag-driven navigation set
    (live Home/Snacks/Training/Orders/Dietitian versus native account tab).
+   Specifically, direct Snacks currently lacks a disabled-feature route guard,
+   and the catalogue/tab use `healthy_snacks_enabled !== false` while web main
+   and native Home require explicit `true`. These are safe mobile code/test
+   tasks, not blockers that require a production submission.
 6. Resolve backend/release blockers separately: JWT inbox support, refresh
    behavior, payment reconciliation/webhook regressions/refund accounting,
    store signing, privacy, real-device testing and native runtime warnings.
@@ -112,3 +151,5 @@ allowed writes; payment acceptance additionally needs approved payment isolation
 
 The Library reference influenced public/private route separation, plan-driven
 selection rules, disabled-slot checkout and the remaining visual-gap list.
+The code-review skill additionally guided public/private response separation,
+bounded review pagination, malformed-response handling and explicit retry tests.
