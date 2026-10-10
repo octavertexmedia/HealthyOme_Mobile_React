@@ -3,8 +3,12 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Platform } from 'react-native';
 import { colors } from '../../src/shared/theme';
+import { useSiteSettings } from '../../src/features/catalog/hooks/useMeals';
 
 export default function TabsLayout() {
+  const { data: settings } = useSiteSettings();
+  const quickMeals = Boolean(settings && settings.home_quick_meals_card_enabled !== false);
+  const snacks = Boolean(settings && settings.healthy_snacks_enabled !== false);
   return (
     <Tabs
       screenOptions={{
@@ -27,8 +31,13 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="menu"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="catalog"
         options={{
-          title: 'Menu',
+          title: quickMeals ? 'Meals' : 'Snacks',
+          href: quickMeals || snacks ? '/(tabs)/catalog' : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="restaurant" size={22} color={color} />
           ),

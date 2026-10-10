@@ -14,6 +14,7 @@ import { registerPushToken, unregisterPushToken } from '../src/features/notifica
 import { usePushDeepLink } from '../src/features/notifications/usePushDeepLink';
 import { useCartSync } from '../src/features/cart/hooks/useCartSync';
 import { initSentry } from '../src/shared/observability/sentry';
+import { env } from '../src/shared/config/env';
 
 initSentry();
 
@@ -39,7 +40,7 @@ export default function RootLayout() {
     let mounted = true;
     (async () => {
       try {
-        await restoreSession();
+        if (!env.readOnlyPreview) await restoreSession();
       } finally {
         if (mounted) {
           setReady(true);
@@ -53,6 +54,7 @@ export default function RootLayout() {
   }, [restoreSession]);
 
   useEffect(() => {
+    if (env.readOnlyPreview) return;
     if (isAuthenticated && pushEnabled) {
       registerPushToken().catch(() => {});
     } else {

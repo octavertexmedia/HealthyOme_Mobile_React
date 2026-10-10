@@ -43,7 +43,7 @@ type HomeFeatureFlags = {
 function getHomeFeatureFlags(settings?: SiteSettings): HomeFeatureFlags {
   return {
     showSubscription: settings?.home_subscription_card_enabled !== false,
-    showQuickMeals: settings?.home_quick_meals_card_enabled !== false,
+    showQuickMeals: Boolean(settings && settings.home_quick_meals_card_enabled !== false),
     // Match the web fail-closed behavior: snacks are hidden unless the catalog
     // is explicitly enabled, and the home card has its own visibility flag.
     showSnacks:
@@ -63,7 +63,7 @@ function normalizeCmsPath(link: string): string {
 
 function getCmsRoute(link: string, flags: HomeFeatureFlags): string | null {
   const path = normalizeCmsPath(link);
-  if (path === '/menu' || path.startsWith('/menu/')) return '/(tabs)/menu';
+  if (path === '/menu' || path.startsWith('/menu/')) return flags.showQuickMeals ? '/(tabs)/menu' : null;
   if (path === '/cart' || path.startsWith('/cart/')) return '/cart';
   if (path === '/checkout' || path.startsWith('/checkout/')) return '/checkout';
   if (path === '/orders' || path.startsWith('/orders/')) return '/(tabs)/orders';
@@ -237,7 +237,9 @@ export default function HomeScreen() {
           <View style={styles.headerRow}>
             <TouchableOpacity
               style={styles.locationWrap}
-              onPress={() => router.push('/profile-pages/addresses' as any)}
+              onPress={() => isAuthenticated
+                ? router.push('/profile-pages/addresses')
+                : router.push({ pathname: '/(auth)/login', params: { redirect: '/profile-pages/addresses' } })}
               activeOpacity={0.85}
             >
               <View style={styles.pinCircle}>
@@ -395,7 +397,7 @@ export default function HomeScreen() {
         {featureFlags.showSubscription && <View style={styles.sectionPad}>
           <TouchableOpacity
             style={styles.roundedCardWrap}
-            onPress={() => router.push('/subscription/plans')}
+            onPress={() => router.push('/subscription/categories')}
             activeOpacity={0.8}
           >
             <View style={[styles.subCardGradient, { backgroundColor: '#EAF5EA' }]}>
@@ -560,7 +562,7 @@ export default function HomeScreen() {
         </View>}
 
         {/* ─── CATEGORIES ─── */}
-        {categories && categories.length > 0 && (
+        {featureFlags.showQuickMeals && categories && categories.length > 0 && (
           <>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeading}>Categories</Text>
@@ -625,7 +627,7 @@ export default function HomeScreen() {
             );
           }
 
-          if (block.block_type !== 'meal_strip' || block.meals.length === 0) return null;
+          if (!featureFlags.showQuickMeals || block.block_type !== 'meal_strip' || block.meals.length === 0) return null;
           return (
             <View key={block.id}>
               <View style={styles.sectionHeader}>
@@ -684,7 +686,7 @@ export default function HomeScreen() {
         })}
 
         {/* ─── FEATURED MEALS ─── */}
-        {!hasCmsMealBlocks && <>
+        {featureFlags.showQuickMeals && !hasCmsMealBlocks && <>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionHeading}>Featured Meal</Text>
           </View>

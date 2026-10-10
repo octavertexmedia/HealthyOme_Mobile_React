@@ -144,7 +144,7 @@ export default function RechargeSubscriptionScreen() {
         ) : manageQuery.isError || !manageQuery.data ? (
           <EmptyState title="Could not load this subscription" action="Retry" onPress={() => manageQuery.refetch()} />
         ) : !manageQuery.data.subscription.is_active ? (
-          <EmptyState title="Ended subscriptions cannot be recharged" action="View subscriptions" onPress={() => router.replace('/subscription' as any)} />
+          <EmptyState title="Ended subscriptions cannot be recharged" action="View subscriptions" onPress={() => router.replace('/subscription/my' as any)} />
         ) : !selectedPeriodId ? (
           <EmptyState title="No recharge periods are available" action="Go back" onPress={() => router.back()} />
         ) : (

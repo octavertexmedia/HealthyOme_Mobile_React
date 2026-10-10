@@ -1,76 +1,114 @@
-# Customer journey acceptance gaps — 2026-10-10
+# Customer journey acceptance gaps — 10 October 2026
 
-This checkpoint is not complete web/mobile parity. The comparison below used
-the local web/backend checkout at `4ea260f09cc94774dc219cfb0cb3a295522342f1`
-and mobile customer code. A separate dev/main web branch review is in progress;
-this local web snapshot must not be mistaken for the agreed post-merge target.
-No web branch was merged or modified.
+## Current correction checkpoint
 
-## Evidence levels
+This is a guest-flow correction, not complete web/mobile parity or a store release.
+Base mobile commit: `895180ba238564a055589560176c46a4a154c354`.
+The source commit containing this report is the current checked checkpoint.
 
-- **Rendered:** Android API 34 and iPhone 17/iOS 26.5 both display onboarding
-  and Home. Screenshots are local delivery evidence, not full-flow acceptance.
-- **Runtime:** iOS SecureStore successfully read a deliberately nonexistent,
-  nonsecret probe key. No token was read, exported, or stored in plaintext.
-- **Read-only backend check:** the configured development endpoint
-  `GET https://dev.healthyome.com/api/shop/meals/` returned HTTP 200 with
-  `count: 0` and an empty results list. The earlier guessed `/meal-items/`
-  diagnostic returned 404; it is not the endpoint used by this application.
-- **Source/tests only:** navigation fixes below have regression coverage;
-  authenticated persistence, OTPs, purchases, fulfillment, and refunds remain
-  untested. No test data was manufactured in the live backend.
+The live healthyome.in walkthrough is the behavioral reference. Its browser was
+1180×757 with a centered 430px app column, not mobile-device emulation. The saved
+Home and public customization screenshots were materialized locally from Library
+and inspected. Local web source at `4ea260f09cc94774dc219cfb0cb3a295522342f1`
+supplements these observations; it does not establish the deployed commit.
+The separately reviewed feature branch has not been merged by this mobile task.
 
-## Concrete paired-source findings
+## Corrected
 
-Web paths are relative to the web repository; mobile paths are relative to this
-repository. Line numbers refer to the inspected checkpoint, before small fixes.
+- Removed mandatory GPS/pickup selection from onboarding and splash routing.
+  Skip/finish now opens Home. The old location link redirects safely to Home.
+  No saved delivery addresses, backend pickup records or location permissions
+  were deleted or rewritten.
+- Public subscription acquisition now follows category → plan list → slug-based
+  detail → customization. `/subscription` opens public categories; personal
+  history is `/subscription/my`, with `/subscription/active` retained as an alias.
+- Customization uses the actual plan, diet-category IDs, periods, prices, allowed
+  meal times and selection limit. The default chooses Veg when available and
+  its longest period, without assuming a category ID. Sunday starts and optional
+  Sunday veg-day selection are disabled; the next-day default skips Sunday.
+- Guest Checkout requests sign-in, retaining plan ID/slug, date, meal times,
+  veg weekdays, instructions and WhatsApp preference in the allowlisted return
+  path. No address, token or health information is put in that path.
+- Removing the last meal time disables Checkout. The displayed estimate uses
+  the exact selected pricing row multiplied by selected slots, not a cheapest
+  variant or copied web amount. Final purchase pricing remains server-owned.
+- Private subscription history and address queries stay disabled for guests.
+  Personal notification/profile links open history, not the public catalogue.
+- Current production flags disable Quick Meals and enable Snacks. The native
+  catalogue tab follows these flags. Disabled Menu/meal deep links return Home;
+  quick-meal Home categories, strips and featured entries are hidden.
 
-| Journey gap | Paired source evidence | Checkpoint disposition |
-| --- | --- | --- |
-| Cart product cannot reopen its details | Web `frontend/src/components/cart/CartLineItem.tsx:36`; mobile `app/cart/index.tsx:63` | Meal row image/title now links to its actual detail screen; UI and malformed-row tests pass. Snack/custom-bowl rows are not sent to nonexistent detail routes. |
-| Guest favourite loses the meal after login | Web `frontend/src/components/menu/MenuItemModal.tsx:177`; mobile `app/meal/[id].tsx:80` and `app/(auth)/verify.tsx:81` | Meal return intent is now passed through the existing allowlisted redirect path. Actual OTP/login remains untested. |
-| Home subscription acquisition entry opens management | Web `frontend/src/components/dashboard/MobileHome.tsx:91` and `frontend/src/app/(app)/subscription/categories/page.tsx:70`; mobile `app/(tabs)/index.tsx:395` | Home now opens the existing public plans browser. Full web category-first/period-first discovery parity is still open. |
-| Per-order address choice is absent | Web `frontend/src/app/(app)/checkout/page.tsx:2131`; mobile `app/checkout/index.tsx:60,544` | Open: native falls back to default/first saved address and its Change action opens account address management. Add order-local selection without mutating the account default. |
-| Consultation health step occurs too late | Web `frontend/src/app/(app)/consult/booking/page.tsx:226` and `consult/health/page.tsx:326`; mobile `app/consult/booking.tsx:130` | Open: native starts payment immediately after booking creation; the later management health form does not reproduce web's pre-payment health step. |
-| Signup referral capture is missing | Web `frontend/src/components/auth/ReferralCodeField.tsx:17` and `SavanaPhoneAuthPanel.tsx:207`; mobile `src/features/auth/api/auth.api.ts:21` | Open: capture, validate, persist and pass the referral code through the actual OTP contract. |
-| Meal review journey is incomplete | Web `frontend/src/components/menu/ProductReviews.tsx:32`; mobile `app/meal/[id].tsx:141` | Open: native displays up to five reviews, has no write/edit path or pagination, and conflates missing data/request failure with no reviews. |
-| Navigation/design/content differ materially | Web `frontend/src/components/BottomNavbar.tsx:40`; mobile `app/(tabs)/_layout.tsx:19,60` | Open: compare feature-flagged service entry points and actual content against the agreed dev/main target. Native platform conventions need not copy a desktop layout. |
+## Verified public production source
 
-The iOS onboarding screenshot also exposed a transformed adjacent-slide image
-overlapping its neighbour. Slide clipping was added without changing branding.
-The source change is distinct from authenticated flow verification.
+The web browser uses same-origin `/api/shop` via
+`frontend/src/lib/shopApiBase.ts`; the Docker `http://web:8000/api/shop` address
+is server-internal, not a mobile base URL. `healthyome.com/api/shop/meals/`
+redirected to canonical `https://healthyome.in/api/shop/meals/`.
 
-Custom-bowl checkout is blocked in the inspected web checkout too
-(`frontend/src/app/(app)/checkout/page.tsx:1239`). It is a shared contract gap,
-not established here as a native-only regression.
+Unauthenticated GETs returned HTTP 200 for meals, subscription plans, browse
+categories, browse catalogue, the home-style lunch overview, and site settings.
+Observed data: 2 quick-meal rows, 76 subscription pricing rows, 4 browse
+categories and 8 meal-plan types. Counts/prices are observations, not constants
+embedded in the app. The disabled quick-meal catalogue is not exposed merely
+because its API returns data.
 
-## Recommended first complete acceptance milestone
+The checkpoint's `app.json` selects `https://healthyome.in/api/shop` with
+`readOnlyPreview: true`. Native runtime reads this bundled source configuration.
+Preview requests omit credentials, session restoration/push registration are
+skipped, and POST/PUT/PATCH/DELETE are rejected before reaching the network.
+This safety flag intentionally prevents sign-in and all production submissions
+until an authenticated test scope is approved.
 
-**Guest shopping loop, on Android and iOS:** Home → populated catalogue → meal
-details → add to local cart → reopen meal → adjust/remove → checkout sign-in
-boundary, preserving the cart and return intent. Record the interaction and
-matched screenshots; do not substitute unit tests for this demonstration.
+## Evidence and limitations
 
-Current blocker: the configured development catalogue is empty. Confirm the
-correct populated staging API/data set. This does not require a payment or a
-production configuration change. Continuing through sign-in requires a valid
-disposable account/phone and explicit allowed test writes; continuing through
-payment additionally requires an isolated test-payment path.
+- Lint and TypeScript pass. Jest: 113 tests in 28 suites. Native script tests: 8.
+- Public Android categories, plan list, detail and customization rendered with
+  real data. Tapping Checkout opened sign-in without creating a booking/order.
+  See the accompanying guest runtime report for final APK and interaction status.
+- iOS runtime confirms guest state, the production base and read-only mode.
+  Public categories/customization render, but an OS “Open in Healthy-O-Me?”
+  dialog obstructed visual acceptance. The user was asked to tap Open once;
+  macOS UI automation timed out and was not treated as a successful interaction.
+- One iOS Hermes SIGSEGV occurred during the editing/hot-reload session. Relaunch
+  restored the app; root cause is unresolved. Existing duplicate RCTSwiftUI
+  class/background-mode warnings remain release blockers to investigate.
+- No OTP, account/address/health submission, order, booking, payment (including
+  zero-rupee), fulfillment, refund, deployment or merge was performed.
+- Tests validate return-path preservation; actual post-login continuation is
+  untested while the corrected phone/account and allowed writes are pending.
 
-## Subsequent phases and exit gates
+## Remaining prioritized work
 
-1. Agree the post-merge web customer target and close Home/catalogue/guest
-   navigation and layout differences. Gate: the recorded guest loop above.
-2. Complete account/address/quote/coupon/checkout and order status/reorder
-   journeys, including referral capture and order-local address selection.
-   Gate: disposable-account acceptance with server totals and account isolation.
-3. Complete subscription discovery/purchase/schedule/pause/recharge/preferences,
-   and consultation pre-payment health details; validate training/diet-plan
-   delivery models before enabling external checkout for digital services.
-   Gate: recorded lifecycle transitions, cancellation/error recovery and
-   approved payment isolation. See `PAYMENT_REVIEW.md` for server safety blockers.
-4. Release hardening: dependency findings, native warning cleanup, push,
-   accessibility/small-device/offline recovery, privacy/data deletion,
-   production environment selection, real-device testing, signing/build numbers
-   and clean-clone native reproducibility. Gate: signed store candidates and
-   authorized acceptance, not debug/simulator artifacts.
+1. Finish uninterrupted iOS visual acceptance and Android guest snack/detail/
+   local-cart/public-checkout acceptance. Do not equate API availability or unit
+   tests with a recorded customer journey.
+2. Complete subscription UI parity: menu-card/day-wise nutrition schedule,
+   Quick subscribe, date-range/holiday calendar, compact selectors and matching
+   content/layout. Current native detail/customization is public but not a
+   pixel-equivalent reproduction of the inspected web screenshots.
+3. Implement per-order delivery-address selection without changing the account
+   default. Current checkout still falls back to default/first saved address.
+   Bind quote, payment payload and fulfillment to the same selected address.
+4. Move consultation health capture before payment. Current native booking
+   still pays immediately after booking creation; the management health form
+   is too late. Validate with mocks before any authorized account writes.
+5. Close referral capture, public product-review/error/pagination/write flows,
+   account-entry auth boundaries, and the complete flag-driven navigation set
+   (live Home/Snacks/Training/Orders/Dietitian versus native account tab).
+6. Resolve backend/release blockers separately: JWT inbox support, refresh
+   behavior, payment reconciliation/webhook regressions/refund accounting,
+   store signing, privacy, real-device testing and native runtime warnings.
+   Never fall back to legacy unpaid `orders/place` or claim payment reliability
+   from mocked verification alone. Preserve typed completion IDs and paid
+   subscriptions whose menu is pending.
+
+## Recommended next acceptance milestone
+
+Complete the recorded guest subscription and snack-shopping loops on both
+platforms against the inspected live flow, with zero production submissions.
+Then select the order-local address + pre-payment consultation-health milestone.
+Authenticated acceptance requires the corrected test phone/account and explicit
+allowed writes; payment acceptance additionally needs approved payment isolation.
+
+The Library reference influenced public/private route separation, plan-driven
+selection rules, disabled-slot checkout and the remaining visual-gap list.

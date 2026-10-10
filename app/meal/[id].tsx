@@ -2,11 +2,11 @@ import React from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Dimensions, ActivityIndicator,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMeal } from '../../src/features/catalog/hooks/useMeals';
+import { useMeal, useSiteSettings } from '../../src/features/catalog/hooks/useMeals';
 import { reviewsApi, type MealReview } from '../../src/features/catalog/api/reviews.api';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { cartApi } from '../../src/features/cart/api/cart.api';
@@ -19,6 +19,13 @@ import Loading from '../../src/shared/components/Loading';
 const { width } = Dimensions.get('window');
 
 export default function MealDetailScreen() {
+  const settings = useSiteSettings();
+  if (settings.isLoading) return <Loading fullScreen />;
+  if (!settings.data || settings.data.home_quick_meals_card_enabled === false) return <Redirect href="/(tabs)" />;
+  return <EnabledMealDetailScreen />;
+}
+
+function EnabledMealDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();

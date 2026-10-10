@@ -33,7 +33,7 @@ export default function ProfileScreen() {
     ...(isAuthenticated ? [{
       title: "Orders",
       items: [
-        { label: "All Subscriptions", icon: "cube-outline", route: "/subscription" },
+        { label: "All Subscriptions", icon: "cube-outline", route: "/subscription/my" },
         { label: "My Orders", icon: "bag-handle-outline", route: "/(tabs)/orders" },
       ],
     },
@@ -102,7 +102,7 @@ export default function ProfileScreen() {
             <TouchableOpacity
               activeOpacity={0.9}
               style={styles.subscriptionCardShadow}
-              onPress={() => router.push('/subscription' as any)}
+          onPress={() => router.push('/subscription/my' as any)}
             >
               <LinearGradient
                 colors={['#2E8B1D', '#1E6F3E']}

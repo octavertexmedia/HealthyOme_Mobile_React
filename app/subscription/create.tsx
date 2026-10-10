@@ -12,18 +12,15 @@ import { subscriptionApi, type SubscriptionPlan } from '../../src/features/subsc
 import { addressesApi } from '../../src/features/addresses/api/addresses.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { usePayment } from '../../src/features/payments/hooks/usePayment';
+import { defaultBrowsePlan, nextSubscriptionStartDate } from '../../src/features/subscription/browsePolicy';
+import { subscriptionReturnPath } from '../../src/features/subscription/subscriptionReturnPath';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const INSTRUCTIONS_OPTIONS = ['Hand it to me', 'Leave at door', 'Call when arriving'];
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function tomorrowIsoDate(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return nextSubscriptionStartDate();
 }
 
 function isValidIsoDate(value: string): boolean {
@@ -45,18 +42,25 @@ export default function CreateSubscription() {
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const params = useLocalSearchParams<{ planId?: string }>();
-  const planId = params.planId ? Number(params.planId) : undefined;
+  const params = useLocalSearchParams<{ planId?: string; plan?: string; startDate?: string; mealTimes?: string; vegDays?: string; instructions?: string; whatsapp?: string }>();
+  const [planId, setPlanId] = useState(params.planId ? Number(params.planId) : undefined);
 
-  const [vegDays, setVegDays] = useState<number[]>([]);
-  const [instructions, setInstructions] = useState(INSTRUCTIONS_OPTIONS[0]);
-  const [startDate, setStartDate] = useState(tomorrowIsoDate());
-  const [mealTimeIds, setMealTimeIds] = useState<number[]>([]);
-  const [whatsappUpdates, setWhatsappUpdates] = useState(true);
+  const [vegDays, setVegDays] = useState<number[]>(params.vegDays ? params.vegDays.split(',').map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 6) : []);
+  const [instructions, setInstructions] = useState(INSTRUCTIONS_OPTIONS.includes(params.instructions ?? '') ? params.instructions! : INSTRUCTIONS_OPTIONS[0]);
+  const [startDate, setStartDate] = useState(params.startDate && isValidIsoDate(params.startDate) ? params.startDate : tomorrowIsoDate());
+  const [mealTimeIds, setMealTimeIds] = useState<number[]>(params.mealTimes ? params.mealTimes.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);
+  const [whatsappUpdates, setWhatsappUpdates] = useState(params.whatsapp !== 'false');
+
+  const overviewQuery = useQuery({
+    queryKey: ['subscription-overview', params.plan],
+    queryFn: () => subscriptionApi.getOverview(params.plan!),
+    enabled: Boolean(params.plan),
+  });
 
   const plansQuery = useQuery({
     queryKey: ['subscription-plans'],
     queryFn: subscriptionApi.getPlans,
+    enabled: !params.plan,
   });
 
   const addressesQuery = useQuery({
@@ -65,10 +69,14 @@ export default function CreateSubscription() {
     enabled: isAuthenticated,
   });
 
-  const plan: SubscriptionPlan | undefined = useMemo(
-    () => plansQuery.data?.find((p) => p.id === planId),
-    [plansQuery.data, planId]
-  );
+  const plans = useMemo(() => (params.plan ? overviewQuery.data?.plans : plansQuery.data)?.filter((p) => p.is_active) ?? [], [params.plan, overviewQuery.data, plansQuery.data]);
+  const plan: SubscriptionPlan | undefined = useMemo(() =>
+    plans.find((p) => p.id === planId) ?? (params.plan && planId === undefined
+      ? defaultBrowsePlan(plans)
+      : undefined), [plans, planId, params.plan]);
+  const variants = Array.from(new Map(plans.filter((p) => p.meal_plan_type.id === plan?.meal_plan_type.id).map((p) => [p.category?.id, p.category])).values()).filter((category) => category !== undefined);
+  const durations = plans.filter((p) => p.meal_plan_type.id === plan?.meal_plan_type.id && p.category?.id === plan?.category?.id);
+  const returnPath = () => subscriptionReturnPath({ plan: params.plan, planId: plan?.id, startDate, mealTimeIds, vegDays, instructions, whatsappUpdates });
 
   const mealTimesQuery = useQuery({
     queryKey: ['subscription-meal-times', plan?.meal_plan_type.id],
@@ -128,14 +136,7 @@ export default function CreateSubscription() {
       return;
     }
     if (!isAuthenticated) {
-      Alert.alert(
-        'Sign in to subscribe',
-        'Please sign in to start a subscription.',
-        [
-          { text: 'Sign in', onPress: () => router.push('/(auth)/login' as any) },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      router.push({ pathname: '/(auth)/login', params: { redirect: returnPath() } });
       return;
     }
     if (!defaultAddress) {
@@ -149,12 +150,20 @@ export default function CreateSubscription() {
       );
       return;
     }
+    if (overviewQuery.data?.can_subscribe === false) {
+      Alert.alert('Plan unavailable', overviewQuery.data.subscribe_blocker || 'This plan cannot be purchased right now.');
+      return;
+    }
     if (!isValidIsoDate(startDate)) {
       Alert.alert('Invalid start date', 'Enter the start date in YYYY-MM-DD format.');
       return;
     }
     if (startDate < tomorrowIsoDate()) {
       Alert.alert('Invalid start date', 'Choose tomorrow or a later date.');
+      return;
+    }
+    if (new Date(`${startDate}T12:00:00`).getDay() === 0) {
+      Alert.alert('Kitchen closed', 'Please choose a start date other than Sunday.');
       return;
     }
     if (!mealTimeIds.length) {
@@ -206,19 +215,19 @@ export default function CreateSubscription() {
     Alert.alert(
       'Subscription created',
       'Payment was confirmed and your subscription is ready to manage.',
-      [{ text: 'View subscriptions', onPress: () => router.replace('/subscription' as any) }]
+      [{ text: 'View subscriptions', onPress: () => router.replace('/subscription/my' as any) }]
     );
   };
 
-  const loading = plansQuery.isLoading || addressesQuery.isLoading;
+  const loading = (params.plan ? overviewQuery.isLoading : plansQuery.isLoading) || addressesQuery.isLoading;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity accessibilityLabel="Go back" onPress={() => router.canGoBack() ? router.back() : router.replace('/subscription/plans')}>
           <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Configure Plan</Text>
+        <Text style={styles.headerTitle}>Customize plan</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -244,12 +253,25 @@ export default function CreateSubscription() {
               </Text>
               <Text style={styles.summaryPrice}>
                 {mealTimeIds.length
-                  ? `₹${(Number(plan.price) * mealTimeIds.length).toFixed(0)} total`
+                  ? `₹${(Number(plan.price) * mealTimeIds.length).toFixed(0)} estimated total`
                   : `₹${Number(plan.price).toFixed(0)} per meal slot`}
               </Text>
             </View>
 
-            {defaultAddress ? (
+            <Text style={styles.sectionTitle}>Diet preference</Text>
+            {variants.map((category) => <TouchableOpacity key={category.id} accessibilityRole="radio" accessibilityState={{ checked: category.id === plan.category?.id }}
+              style={[styles.optionRow, category.id === plan.category?.id && styles.optionRowActive]}
+              onPress={() => setPlanId((plans.find((p) => p.meal_plan_type.id === plan.meal_plan_type.id && p.category?.id === category.id && p.subscription_period.id === plan.subscription_period.id)
+                ?? plans.find((p) => p.meal_plan_type.id === plan.meal_plan_type.id && p.category?.id === category.id))?.id)}>
+              <Text style={styles.optionText}>{category.name}</Text>
+            </TouchableOpacity>)}
+            <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>Plan duration</Text>
+            {durations.map((option) => <TouchableOpacity key={option.id} accessibilityRole="radio" accessibilityState={{ checked: option.id === plan.id }}
+              style={[styles.optionRow, option.id === plan.id && styles.optionRowActive]} onPress={() => setPlanId(option.id)}>
+              <Text style={styles.optionText}>{option.subscription_period.name} · ₹{Number(option.price).toFixed(0)} per meal slot</Text>
+            </TouchableOpacity>)}
+
+            {!isAuthenticated ? <Text style={styles.sectionDesc}>Delivery address is added after sign-in at Checkout.</Text> : defaultAddress ? (
               <View style={styles.addressCard}>
                 <Ionicons name="location-outline" size={20} color={colors.primary} />
                 <View style={{ flex: 1 }}>
@@ -319,7 +341,9 @@ export default function CreateSubscription() {
               {DAYS.map((day, i) => (
                 <TouchableOpacity
                   key={day}
-                  style={[styles.dayChip, vegDays.includes(i) && styles.dayChipActive]}
+                  disabled={i === 6}
+                  accessibilityState={{ disabled: i === 6 }}
+                  style={[styles.dayChip, vegDays.includes(i) && styles.dayChipActive, i === 6 && { opacity: 0.4 }]}
                   onPress={() => toggleDay(i)}
                 >
                   <Text style={[styles.dayText, vegDays.includes(i) && styles.dayTextActive]}>{day}</Text>
@@ -357,7 +381,7 @@ export default function CreateSubscription() {
             </View>
 
             <Text style={styles.paymentNote}>
-              Your subscription is created only after Razorpay confirms payment. You will not be charged if you cancel the payment sheet.
+              Final availability, delivery charges and total are confirmed by the server at checkout. Payment must be verified before the subscription is activated.
             </Text>
           </>
         )}
@@ -365,10 +389,10 @@ export default function CreateSubscription() {
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.md }]}>
         <Button
-          title={paying ? 'Opening payment…' : 'Pay & Start Subscription'}
+          title={paying ? 'Opening payment…' : 'Checkout'}
           onPress={handleSubmit}
           loading={paying}
-          disabled={!plan || paying || mealTimesQuery.isLoading}
+          disabled={!plan || paying || mealTimesQuery.isLoading || !mealTimeIds.length || overviewQuery.data?.can_subscribe === false}
           fullWidth
           size="lg"
         />

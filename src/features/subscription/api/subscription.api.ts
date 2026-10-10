@@ -63,6 +63,24 @@ export interface SubscriptionPlan {
   description?: string;
 }
 
+export interface BrowseCategory {
+  id: number; slug: string; title: string; subtitle: string; badge: string;
+  image: string; image_url: string | null; gradient_from: string; gradient_to: string;
+  image_object_fit: 'cover' | 'contain'; meal_plan_type_ids: number[];
+  filter_slugs: string[]; filter_name_contains: string[]; filter_name_excludes: string[];
+}
+export interface BrowsePlan {
+  slug: string; meal_plan_type: MealPlanTypeRef; starting_price: string;
+  starting_period_label: string; preview_images: string[]; plans_count: number;
+}
+export interface PlanOverview {
+  slug: string; meal_plan_type: MealPlanTypeRef; plans: SubscriptionPlan[];
+  starting_price: string | null; starting_period_label: string | null;
+  available_meals: { id: number; name: string; image?: string }[];
+  meal_times: MealTimeRef[]; max_meal_times_selectable?: number | null;
+  can_subscribe?: boolean; subscribe_blocker?: string | null;
+}
+
 // ActiveMealPlanSerializer (shop/api/subscriptions.py). Note: field is `price`, NOT total_amount.
 export interface ActiveSubscription {
   id: number;
@@ -201,15 +219,28 @@ export interface RechargeQuoteResponse {
 }
 
 export const subscriptionApi = {
+  getBrowseCategories: async (): Promise<BrowseCategory[]> => {
+    const { data } = await apiClient.get<BrowseCategory[]>('/subscriptions/browse-categories/', { publicRequest: true });
+    return data;
+  },
+  getBrowseCatalog: async (): Promise<{ meal_plans: BrowsePlan[]; offers: { title: string; description: string }[] }> => {
+    const { data } = await apiClient.get('/subscriptions/browse-catalog/', { publicRequest: true });
+    return data;
+  },
+  getOverview: async (slug: string): Promise<PlanOverview> => {
+    const { data } = await apiClient.get<PlanOverview>('/subscriptions/meal-plan-overview/', { params: { slug }, publicRequest: true });
+    return data;
+  },
   // Canonical plans endpoint (subscriptions.py:133). Flat array, NO pagination wrapper.
   getPlans: async (): Promise<SubscriptionPlan[]> => {
-    const { data } = await apiClient.get('/subscriptions/plans/');
+    const { data } = await apiClient.get('/subscriptions/plans/', { publicRequest: true });
     return Array.isArray(data) ? data : [];
   },
 
   // Same canonical endpoint filtered by meal_plan_type (replaces deprecated /subscription-plans/by_plan/).
   getPlansByType: async (mealPlanTypeId: number): Promise<SubscriptionPlan[]> => {
     const { data } = await apiClient.get('/subscriptions/plans/', {
+      publicRequest: true,
       params: { meal_plan_type: mealPlanTypeId },
     });
     return Array.isArray(data) ? data : [];
@@ -218,7 +249,7 @@ export const subscriptionApi = {
   getMealTimes: async (mealPlanTypeId?: number): Promise<MealTimesListResponse> => {
     const { data } = await apiClient.get<MealTimesListResponse | MealTimeRef[]>(
       '/meal-times-list/',
-      { params: mealPlanTypeId ? { meal_plan_type_id: mealPlanTypeId } : undefined }
+      { params: mealPlanTypeId ? { meal_plan_type_id: mealPlanTypeId } : undefined, publicRequest: true }
     );
     if (Array.isArray(data)) {
       return {

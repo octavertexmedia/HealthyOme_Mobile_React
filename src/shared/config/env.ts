@@ -1,13 +1,15 @@
-import Constants from 'expo-constants';
+import appConfig from '../../../app.json';
 
 type AppEnv = 'development' | 'preview' | 'production';
 
 type Extra = {
   apiUrl?: string;
   appEnv?: AppEnv;
+  readOnlyPreview?: boolean;
 };
 
-const extra: Extra = (Constants.expoConfig?.extra ?? {}) as Extra;
+// Source config also applies to native debug builds served by Metro.
+const extra: Extra = appConfig.expo.extra as Extra;
 
 const DEFAULT_API_URL = 'https://dev.healthyome.com/api/shop';
 
@@ -23,4 +25,5 @@ export const env = {
   apiUrl,
   appEnv,
   isProd: appEnv === 'production',
+  readOnlyPreview: extra.readOnlyPreview === true,
 };

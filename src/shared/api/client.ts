@@ -6,6 +6,10 @@ import axios, {
 import { env } from '../config/env';
 import { tokenStore } from '../storage/tokens';
 
+declare module 'axios' {
+  interface AxiosRequestConfig { publicRequest?: boolean }
+}
+
 const API_BASE_URL = env.apiUrl;
 
 // Axios exposes `create` on its default export; this is the documented factory API.
@@ -20,6 +24,13 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   async (config) => {
+    if (env.readOnlyPreview && !['get', 'head'].includes((config.method ?? 'get').toLowerCase())) {
+      throw new Error('This guest preview is read-only. Sign-in, account changes and payments are disabled.');
+    }
+    if (config.publicRequest || env.readOnlyPreview) {
+      config.headers.delete('Authorization');
+      return config;
+    }
     const token = await tokenStore.getAccess();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -67,7 +78,7 @@ apiClient.interceptors.response.use(
     const original = error.config as RetriableConfig | undefined;
     const status = error.response?.status;
 
-    if (!original || status !== 401 || original._retry) {
+    if (!original || status !== 401 || original._retry || original.publicRequest || env.readOnlyPreview) {
       return Promise.reject(error);
     }
 

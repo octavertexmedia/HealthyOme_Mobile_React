@@ -5,8 +5,8 @@ import {
 
 describe('notification route mapping', () => {
   it('maps customer-web routes onto existing native screens', () => {
-    expect(mobileRouteForNotificationPath('/subscription/manage/12')).toBe('/subscription');
-    expect(mobileRouteForNotificationPath('/subscription/categories')).toBe('/subscription/plans');
+    expect(mobileRouteForNotificationPath('/subscription/manage/12')).toBe('/subscription/manage/12');
+    expect(mobileRouteForNotificationPath('/subscription/categories')).toBe('/subscription/categories');
     expect(mobileRouteForNotificationPath('/consult/manage/23')).toBe('/consult/my');
     expect(mobileRouteForNotificationPath('/track/34')).toBe('/orders/my/34');
     expect(mobileRouteForNotificationPath('/orders?highlight=45')).toBe('/orders/my/45');
@@ -21,6 +21,6 @@ describe('notification route mapping', () => {
   it('falls back to structured push metadata', () => {
     expect(routeFromNotificationData({ type: 'order_status', orderId: 61 })).toBe('/orders/my/61');
     expect(routeFromNotificationData({ type: 'promotion' })).toBe('/(tabs)/menu');
-    expect(routeFromNotificationData({ link_path: '/subscription/active' })).toBe('/subscription');
+    expect(routeFromNotificationData({ link_path: '/subscription/active' })).toBe('/subscription/my');
   });
 });

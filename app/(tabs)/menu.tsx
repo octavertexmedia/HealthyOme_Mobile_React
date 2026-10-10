@@ -3,12 +3,12 @@ import {
   View, Text, TouchableOpacity, TextInput,
   StyleSheet, Image, Dimensions, RefreshControl, Modal, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, Redirect } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useInfiniteMeals, useMealCategories } from '../../src/features/catalog/hooks/useMeals';
+import { useInfiniteMeals, useMealCategories, useSiteSettings } from '../../src/features/catalog/hooks/useMeals';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { colors, spacing, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
@@ -23,6 +23,13 @@ const CARD_WIDTH = (width - spacing.xl * 2 - spacing.md) / 2;
 const ALL_CATEGORY = 'all' as const;
 
 export default function MenuScreen() {
+  const settings = useSiteSettings();
+  if (settings.isLoading) return <ActivityIndicator />;
+  if (!settings.data || settings.data.home_quick_meals_card_enabled === false) return <Redirect href="/(tabs)" />;
+  return <EnabledMenuScreen />;
+}
+
+function EnabledMenuScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ category?: string }>();

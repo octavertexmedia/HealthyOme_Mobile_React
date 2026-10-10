@@ -16,18 +16,16 @@ export default function SplashScreen() {
       if (!mounted) return;
 
       const hasOnboardedStr = await storage.getString('has_onboarded');
-      const hasLocationPermissionStr = await storage.getString('has_location_permission');
+      if (!mounted) return;
 
       if (hasOnboardedStr !== 'true') {
         router.replace('/onboarding' as any);
-      } else if (hasLocationPermissionStr !== 'true') {
-        router.replace('/onboarding/location' as any);
       } else {
         router.replace('/(tabs)');
       }
     };
 
-    checkOnboarding();
+    void checkOnboarding().catch(() => { if (mounted) router.replace('/(tabs)'); });
     return () => { mounted = false; };
   }, [router]);
 

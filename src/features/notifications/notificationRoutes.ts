@@ -29,12 +29,12 @@ export function mobileRouteForNotificationPath(rawPath?: string | null): string 
       : '/(tabs)/orders';
   }
 
-  if (/^\/subscription\/manage\/\d+\/?$/.test(path)) return '/subscription';
+  if (/^\/subscription\/manage\/\d+\/?$/.test(path)) return path.replace(/\/$/, '');
   if (path === '/subscription/active' || path === '/subscription/active/') {
-    return '/subscription';
+    return '/subscription/my';
   }
   if (path === '/subscription/categories' || path === '/subscription/categories/') {
-    return '/subscription/plans';
+    return '/subscription/categories';
   }
   if (path === '/subscription' || path === '/subscription/') return '/subscription';
 
@@ -71,7 +71,7 @@ export function routeFromNotificationData(data: NotificationRouteData): string |
     }
     case 'subscription':
     case 'subscription_reminder':
-      return '/subscription';
+      return '/subscription/my';
     case 'consult':
     case 'consultation':
       return '/consult/my';

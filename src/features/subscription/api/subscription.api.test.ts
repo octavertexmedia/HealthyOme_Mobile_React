@@ -24,5 +24,5 @@ it('loads actual meal-time IDs without a made-up plan filter', async () => {
   const data = { meal_times: [{ id: 42, name: 'Lunch' }], max_meal_times_selectable: null, meal_plan_type: null };
   jest.mocked(apiClient.get).mockResolvedValue({ data });
   await expect(subscriptionApi.getMealTimes()).resolves.toEqual(data);
-  expect(apiClient.get).toHaveBeenCalledWith('/meal-times-list/', { params: undefined });
+  expect(apiClient.get).toHaveBeenCalledWith('/meal-times-list/', { params: undefined, publicRequest: true });
 });

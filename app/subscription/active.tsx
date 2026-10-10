@@ -6,5 +6,5 @@ import { Redirect } from 'expo-router';
 // active subscriptions. app/subscription/index.tsx already renders that list (with
 // pause/resume), so redirect there instead of duplicating the screen.
 export default function ActiveSubscriptionsScreen() {
-  return <Redirect href="/subscription" />;
+  return <Redirect href="/subscription/my" />;
 }

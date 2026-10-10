@@ -5,6 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { storage } from '../../src/shared/storage/mmkv';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,16 +36,22 @@ export default function OnboardingScreen() {
   const flatListRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  const finish = () => {
+    // Browsing never requires GPS, a pickup point, or an account address.
+    void storage.set('has_onboarded', 'true').catch(() => {});
+    router.replace('/(tabs)');
+  };
+
   const handleNext = () => {
     if (currentIndex < SLIDES.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
     } else {
-      router.replace('/onboarding/location');
+      finish();
     }
   };
 
   const handleSkip = () => {
-    router.replace('/onboarding/location');
+    finish();
   };
 
   const renderItem = ({ item, index }: { item: typeof SLIDES[0], index: number }) => {
