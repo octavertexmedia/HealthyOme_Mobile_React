@@ -10,11 +10,17 @@ import { authApi } from '../../src/features/auth/api/auth.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { colors, spacing, borderRadius, typography } from '../../src/shared/theme';
 import Button from '../../src/shared/components/Button';
+import { safeAuthRedirect } from '../../src/features/auth/authRedirect';
 
 export default function VerifyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ phone?: string; email?: string; mode?: string }>();
+  const params = useLocalSearchParams<{
+    phone?: string;
+    email?: string;
+    mode?: string;
+    redirect?: string | string[];
+  }>();
   const setAuth = useAuthStore((s) => s.setAuth);
 
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -72,9 +78,9 @@ export default function VerifyScreen() {
         return;
       }
 
-      setAuth(response.user, access, refresh);
+      await setAuth(response.user, access, refresh);
       router.dismissAll();
-      router.replace('/(tabs)');
+      router.replace((safeAuthRedirect(params.redirect) ?? '/(tabs)') as any);
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.error || 'Failed to verify OTP');
     } finally {

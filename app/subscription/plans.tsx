@@ -11,7 +11,7 @@ import { subscriptionApi, type SubscriptionPlan } from '../../src/features/subsc
 import { colors } from '../../src/shared/theme';
 import EmptyState from '../../src/shared/components/EmptyState';
 
-const GRADIENT_PALETTE: Array<[string, string]> = [
+const GRADIENT_PALETTE: [string, string][] = [
   ['#E8F5E9', '#C8E6C9'],
   ['#FFF3E0', '#FFE0B2'],
   ['#E3F2FD', '#BBDEFB'],

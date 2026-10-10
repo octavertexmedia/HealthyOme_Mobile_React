@@ -1,7 +1,8 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, Dimensions, Image,
+  RefreshControl, Dimensions, Image, Linking, AccessibilityInfo, AppState,
+  type NativeScrollEvent, type NativeSyntheticEvent,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +10,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useQuery } from '@tanstack/react-query';
-import { useFeaturedMeals, useHomeLayout, useMealCategories } from '../../src/features/catalog/hooks/useMeals';
+import {
+  useFeaturedMeals,
+  useHomeLayout,
+  useMealCategories,
+  useSiteSettings,
+} from '../../src/features/catalog/hooks/useMeals';
+import type {
+  HomeLayoutBlockMeal,
+  PromoBanner,
+  SiteSettings,
+} from '../../src/features/catalog/types/meal.types';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { rewardsApi } from '../../src/features/rewards/api/rewards.api';
@@ -20,6 +31,64 @@ const { width } = Dimensions.get('window');
 // compute card width to fit inside horizontal padding (20px each side)
 const CARD_WIDTH = width - 40;
 
+type HomeFeatureFlags = {
+  showSubscription: boolean;
+  showQuickMeals: boolean;
+  showSnacks: boolean;
+  showConsult: boolean;
+  showFunctionalTraining: boolean;
+  allowCustomBowls: boolean;
+};
+
+function getHomeFeatureFlags(settings?: SiteSettings): HomeFeatureFlags {
+  return {
+    showSubscription: settings?.home_subscription_card_enabled !== false,
+    showQuickMeals: settings?.home_quick_meals_card_enabled !== false,
+    // Match the web fail-closed behavior: snacks are hidden unless the catalog
+    // is explicitly enabled, and the home card has its own visibility flag.
+    showSnacks:
+      settings?.healthy_snacks_enabled === true &&
+      settings?.home_healthy_snacks_card_enabled !== false,
+    showConsult: settings?.home_consult_card_enabled !== false,
+    showFunctionalTraining: settings?.functional_training_customer_enabled !== false,
+    allowCustomBowls: settings?.custom_bowl_checkout_enabled === true,
+  };
+}
+
+function normalizeCmsPath(link: string): string {
+  const pathWithQuery = link.trim().replace(/^https?:\/\/[^/]+/i, '');
+  const path = pathWithQuery.split(/[?#]/, 1)[0] || '/';
+  return path.length > 1 ? path.replace(/\/+$/, '') : path;
+}
+
+function getCmsRoute(link: string, flags: HomeFeatureFlags): string | null {
+  const path = normalizeCmsPath(link);
+  if (path === '/menu' || path.startsWith('/menu/')) return '/(tabs)/menu';
+  if (path === '/cart' || path.startsWith('/cart/')) return '/cart';
+  if (path === '/checkout' || path.startsWith('/checkout/')) return '/checkout';
+  if (path === '/orders' || path.startsWith('/orders/')) return '/(tabs)/orders';
+  if (path === '/rewards' || path.startsWith('/rewards/')) return '/rewards';
+  if (path === '/sidebar/offers' || path === '/offers') return '/profile-pages/offers';
+  if (path === '/privacy') return '/profile-pages/terms?slug=privacy';
+  if (path === '/terms') return '/profile-pages/terms';
+  if (path === '/subscription' || path.startsWith('/subscription/')) {
+    return flags.showSubscription ? '/subscription' : null;
+  }
+  if (path === '/consult' || path.startsWith('/consult/')) {
+    return flags.showConsult ? '/consult' : null;
+  }
+  if (path === '/snacks' || path.startsWith('/snacks/')) {
+    return flags.showSnacks ? '/snacks' : null;
+  }
+  if (path === '/functional-training' || path.startsWith('/functional-training/')) {
+    return flags.showFunctionalTraining ? '/functional-training' : null;
+  }
+  if (path === '/bowl-builder' || path.startsWith('/bowl-builder/')) {
+    return flags.allowCustomBowls ? '/bowl-builder' : null;
+  }
+  return null;
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -29,11 +98,14 @@ export default function HomeScreen() {
     isLoading: isFeaturedLoading,
   } = useFeaturedMeals();
   const { data: homeLayout, refetch: refetchHome } = useHomeLayout();
+  const { data: siteSettings, refetch: refetchSiteSettings } = useSiteSettings();
   const { data: categories } = useMealCategories();
   const addItem = useCartStore((s) => s.addItem);
   const cartCount = useCartStore((s) => s.totalItems);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeHeroSlide, setActiveHeroSlide] = useState(0);
+  const heroScrollRef = useRef<ScrollView>(null);
 
   const pointsQuery = useQuery({
     queryKey: ['rewards', 'points'],
@@ -61,12 +133,84 @@ export default function HomeScreen() {
     : undefined;
 
   const promoBanners = homeLayout?.promo_banners ?? [];
+  const heroSlides = useMemo(
+    () => (homeLayout?.hero_slides ?? []).filter((slide) => slide.title?.trim()),
+    [homeLayout?.hero_slides]
+  );
+  const homeBlocks = homeLayout?.home_page_blocks ?? [];
+  const featureFlags = useMemo(() => getHomeFeatureFlags(siteSettings), [siteSettings]);
+  const hasCmsMealBlocks = homeBlocks.some(
+    (block) => block.block_type === 'meal_strip' && block.meals.length > 0
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchMeals(), refetchHome()]);
-    setRefreshing(false);
-  }, [refetchMeals, refetchHome]);
+    try {
+      await Promise.all([refetchMeals(), refetchHome(), refetchSiteSettings()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchMeals, refetchHome, refetchSiteSettings]);
+
+  const openCmsLink = useCallback(
+    (link?: string) => {
+      const raw = link?.trim();
+      if (!raw) return;
+      // CMS content may link off-site. Only permit web URLs; reject custom
+      // schemes so remotely managed content cannot open privileged deep links.
+      if (/^https?:\/\//i.test(raw)) {
+        void Linking.openURL(raw).catch(() => undefined);
+        return;
+      }
+      const route = getCmsRoute(raw, featureFlags);
+      if (route) router.push(route as any);
+    },
+    [featureFlags, router]
+  );
+
+  const openPromo = useCallback(
+    (promo: PromoBanner) => {
+      const coupon = promo.coupon_code?.trim().toUpperCase();
+      if (coupon) {
+        router.push({ pathname: '/checkout', params: { coupon } } as any);
+        return;
+      }
+      router.push('/profile-pages/offers' as any);
+    },
+    [router]
+  );
+
+  const onHeroScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const next = Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH);
+      setActiveHeroSlide(Math.max(0, Math.min(next, heroSlides.length - 1)));
+    },
+    [heroSlides.length]
+  );
+
+  useEffect(() => {
+    if (heroSlides.length <= 1) return;
+    let reduceMotion = false;
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      reduceMotion = enabled;
+    });
+    const motionSubscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (enabled) => { reduceMotion = enabled; }
+    );
+    const timer = setInterval(() => {
+      if (reduceMotion || AppState.currentState !== 'active') return;
+      setActiveHeroSlide((current) => {
+        const next = (current + 1) % heroSlides.length;
+        heroScrollRef.current?.scrollTo({ x: next * CARD_WIDTH, animated: true });
+        return next;
+      });
+    }, 6000);
+    return () => {
+      clearInterval(timer);
+      motionSubscription.remove();
+    };
+  }, [heroSlides.length]);
 
   const getCategoryName = (meal: any): string => {
     if (meal.category && typeof meal.category === 'object') return meal.category.name;
@@ -129,23 +273,85 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Hero Content */}
-          <View style={styles.heroContent}>
-            {homeLayout?.hero_headline ? (
-              <Text style={styles.heroTitle}>{homeLayout.hero_headline}</Text>
-            ) : null}
-          </View>
-
-          <Image
-            source={require('../../assets/images/figma/new_home/hero_lobster.png')}
-            style={styles.heroLeftDish}
-            resizeMode="contain"
-          />
-          <Image
-            source={require('../../assets/images/figma/new_home/hero_lobster.png')}
-            style={styles.heroRightDish}
-            resizeMode="contain"
-          />
+          {heroSlides.length > 0 ? (
+            <>
+              <ScrollView
+                ref={heroScrollRef}
+                horizontal
+                pagingEnabled
+                nestedScrollEnabled
+                bounces={false}
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={onHeroScrollEnd}
+                style={styles.heroSlides}
+                contentContainerStyle={styles.heroSlidesContent}
+              >
+                {heroSlides.map((slide) => {
+                  const imageUrl = getImageUrl(slide.image_url);
+                  const canOpen = !!slide.button_link &&
+                    (/^https?:\/\//i.test(slide.button_link) ||
+                      !!getCmsRoute(slide.button_link, featureFlags));
+                  return (
+                    <View key={slide.id} style={styles.heroSlide}>
+                      <View style={styles.heroSlideCopy}>
+                        <Text style={styles.heroTitle}>{slide.title || homeLayout?.hero_headline}</Text>
+                        {!!slide.subtitle && (
+                          <Text style={styles.heroSubtitle} numberOfLines={2}>{slide.subtitle}</Text>
+                        )}
+                        {!!slide.description && (
+                          <Text style={styles.heroDescription} numberOfLines={2}>{slide.description}</Text>
+                        )}
+                        {!!slide.button_text && canOpen && (
+                          <TouchableOpacity
+                            style={styles.heroButton}
+                            onPress={() => openCmsLink(slide.button_link)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={styles.heroButtonText}>{slide.button_text}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      {imageUrl ? (
+                        <Image
+                          source={{ uri: imageUrl }}
+                          style={styles.heroSlideImage}
+                          resizeMode="contain"
+                        />
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+              {heroSlides.length > 1 && (
+                <View style={styles.heroDots}>
+                  {heroSlides.map((slide, index) => (
+                    <View
+                      key={slide.id}
+                      style={[styles.heroDot, index === activeHeroSlide && styles.heroDotActive]}
+                    />
+                  ))}
+                </View>
+              )}
+            </>
+          ) : (
+            <>
+              <View style={styles.heroContent}>
+                {homeLayout?.hero_headline ? (
+                  <Text style={styles.heroTitle}>{homeLayout.hero_headline}</Text>
+                ) : null}
+              </View>
+              <Image
+                source={require('../../assets/images/figma/new_home/hero_lobster.png')}
+                style={styles.heroLeftDish}
+                resizeMode="contain"
+              />
+              <Image
+                source={require('../../assets/images/figma/new_home/hero_lobster.png')}
+                style={styles.heroRightDish}
+                resizeMode="contain"
+              />
+            </>
+          )}
         </LinearGradient>
 
         {/* ─── PROMO CAROUSEL ─── (only when the CMS returns banners) */}
@@ -170,10 +376,12 @@ export default function HomeScreen() {
 
                       <TouchableOpacity
                         style={[styles.promoSliderBtn, { backgroundColor: promo.button_bg_color || '#0099A3' }]}
-                        onPress={() => router.push('/(tabs)/menu')}
+                        onPress={() => openPromo(promo)}
                         activeOpacity={0.85}
                       >
-                        <Text style={[styles.promoSliderBtnText, { color: promo.button_text_color || '#fff', textTransform: 'capitalize' }]}>Learn more</Text>
+                        <Text style={[styles.promoSliderBtnText, { color: promo.button_text_color || '#fff' }]}>
+                          {promo.coupon_code ? `Use ${promo.coupon_code}` : 'View offer'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -184,7 +392,7 @@ export default function HomeScreen() {
         )}
 
         {/* ─── SUBSCRIPTION MEALS CARD ─── */}
-        <View style={styles.sectionPad}>
+        {featureFlags.showSubscription && <View style={styles.sectionPad}>
           <TouchableOpacity
             style={styles.roundedCardWrap}
             onPress={() => router.push('/subscription')}
@@ -202,16 +410,18 @@ export default function HomeScreen() {
               </View>
 
               <Image
-                source={require('../../assets/images/figma/new_home/subscription_right-4f2f3b.png')}
+                source={homeLayout?.subscription_card_image_src
+                  ? { uri: getImageUrl(homeLayout.subscription_card_image_src) }
+                  : require('../../assets/images/figma/new_home/subscription_right-4f2f3b.png')}
                 style={styles.subImg}
                 resizeMode="contain"
               />
             </View>
           </TouchableOpacity>
-        </View>
+        </View>}
 
         {/* ─── QUICK MEALS CARD ─── */}
-        <View style={styles.sectionPad}>
+        {featureFlags.showQuickMeals && <View style={styles.sectionPad}>
           <TouchableOpacity
             style={styles.roundedCardWrap}
             onPress={() => router.push('/(tabs)/menu')}
@@ -229,22 +439,32 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <Image
-                source={require('../../assets/images/figma/new_home/feature_quick_2.png')}
-                style={styles.quickImgRightPlats}
-                resizeMode="cover"
-              />
-              <Image
-                source={require('../../assets/images/figma/new_home/feature_quick_1.png')}
-                style={styles.quickImgLeftPlats}
-                resizeMode="cover"
-              />
+              {homeLayout?.quick_meals_card_image_src ? (
+                <Image
+                  source={{ uri: getImageUrl(homeLayout.quick_meals_card_image_src) }}
+                  style={styles.quickCmsImg}
+                  resizeMode="contain"
+                />
+              ) : (
+                <>
+                  <Image
+                    source={require('../../assets/images/figma/new_home/feature_quick_2.png')}
+                    style={styles.quickImgRightPlats}
+                    resizeMode="cover"
+                  />
+                  <Image
+                    source={require('../../assets/images/figma/new_home/feature_quick_1.png')}
+                    style={styles.quickImgLeftPlats}
+                    resizeMode="cover"
+                  />
+                </>
+              )}
             </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </View>}
 
         {/* ─── CONSULT DIETICIAN CARD ─── */}
-        <View style={styles.sectionPad}>
+        {featureFlags.showConsult && <View style={styles.sectionPad}>
           <TouchableOpacity
             style={[styles.roundedCardWrap, { borderColor: '#F3F3F3', borderWidth: 1 }]}
             onPress={() => router.push('/consult')}
@@ -262,17 +482,19 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <Image 
-                source={require('../../assets/images/figma/new_home/consult_dietician-1fcf07.png')}
+              <Image
+                source={homeLayout?.consult_card_image_src
+                  ? { uri: getImageUrl(homeLayout.consult_card_image_src) }
+                  : require('../../assets/images/figma/new_home/consult_dietician-1fcf07.png')}
                 style={styles.consultImg}
                 resizeMode="contain"
               />
             </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </View>}
 
         {/* ─── HEALTHY SNACKS CARD ─── */}
-        <View style={styles.sectionPad}>
+        {featureFlags.showSnacks && <View style={styles.sectionPad}>
           <TouchableOpacity
             style={[styles.roundedCardWrap, { borderColor: '#F3F3F3', borderWidth: 1 }]}
             onPress={() => router.push('/snacks' as any)}
@@ -289,15 +511,23 @@ export default function HomeScreen() {
                   <Text style={[styles.subDesc, { marginTop: 4 }]}>{homeLayout?.healthy_snacks_card_subtitle || ''}</Text>
                 </View>
               </View>
-              <View style={styles.homeCardIcon}>
-                <Ionicons name="nutrition-outline" size={44} color="#E8873B" />
-              </View>
+              {homeLayout?.healthy_snacks_card_image_src ? (
+                <Image
+                  source={{ uri: getImageUrl(homeLayout.healthy_snacks_card_image_src) }}
+                  style={styles.serviceCmsImg}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.homeCardIcon}>
+                  <Ionicons name="nutrition-outline" size={44} color="#E8873B" />
+                </View>
+              )}
             </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </View>}
 
         {/* ─── FUNCTIONAL TRAINING CARD ─── */}
-        <View style={styles.sectionPad}>
+        {featureFlags.showFunctionalTraining && <View style={styles.sectionPad}>
           <TouchableOpacity
             style={[styles.roundedCardWrap, { borderColor: '#F3F3F3', borderWidth: 1 }]}
             onPress={() => router.push('/functional-training' as any)}
@@ -314,12 +544,20 @@ export default function HomeScreen() {
                   <Text style={[styles.subDesc, { marginTop: 4 }]}>{homeLayout?.functional_training_card_subtitle || ''}</Text>
                 </View>
               </View>
-              <View style={styles.homeCardIcon}>
-                <Ionicons name="barbell-outline" size={44} color="#3B6FE8" />
-              </View>
+              {homeLayout?.functional_training_card_image_src ? (
+                <Image
+                  source={{ uri: getImageUrl(homeLayout.functional_training_card_image_src) }}
+                  style={styles.serviceCmsImg}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.homeCardIcon}>
+                  <Ionicons name="barbell-outline" size={44} color="#3B6FE8" />
+                </View>
+              )}
             </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </View>}
 
         {/* ─── CATEGORIES ─── */}
         {categories && categories.length > 0 && (
@@ -358,16 +596,104 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* ─── FEATURED MEALS ─── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionHeading}>Featured Meal</Text>
-        </View>
+        {/* ─── CMS-ORDERED HOME BLOCKS ─── */}
+        {homeBlocks.map((block) => {
+          if (block.block_type === 'promo' && block.promo) {
+            const promo = block.promo;
+            const bannerImg = getImageUrl(promo.right_image_src);
+            return (
+              <View key={block.id} style={styles.inlinePromoWrap}>
+                <View style={[styles.promoSliderCard, { backgroundColor: promo.bg_color || '#EAF5EA' }]}>
+                  {bannerImg ? (
+                    <Image source={{ uri: bannerImg }} style={styles.promoSliderImg} resizeMode="cover" />
+                  ) : null}
+                  <View style={styles.promoSliderContent}>
+                    <Text style={styles.promoSliderTitle}>{promo.title}</Text>
+                    <Text style={styles.promoSliderDesc}>{promo.description}</Text>
+                    <TouchableOpacity
+                      style={[styles.promoSliderBtn, { backgroundColor: promo.button_bg_color || '#0099A3' }]}
+                      onPress={() => openPromo(promo)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.promoSliderBtnText, { color: promo.button_text_color || '#fff' }]}>
+                        {promo.coupon_code ? `Use ${promo.coupon_code}` : 'View offer'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            );
+          }
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, gap: 16, marginTop: 16 }}
-        >
+          if (block.block_type !== 'meal_strip' || block.meals.length === 0) return null;
+          return (
+            <View key={block.id}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionHeading}>{block.title || 'Featured'}</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.mealStripContent}
+              >
+                {block.meals.map((meal: HomeLayoutBlockMeal) => {
+                  const imageUrl = getImageUrl(meal.image);
+                  return (
+                    <TouchableOpacity
+                      key={meal.id}
+                      style={styles.featCard}
+                      onPress={() => router.push(`/meal/${meal.id}` as any)}
+                      activeOpacity={0.9}
+                    >
+                      <Image
+                        source={imageUrl
+                          ? { uri: imageUrl }
+                          : require('../../assets/images/figma/new_home/featured_chicken_salad.png')}
+                        style={styles.featImg}
+                      />
+                      <View style={styles.featInfo}>
+                        <Text style={styles.featCat} numberOfLines={1}>{block.title || 'Featured'}</Text>
+                        <Text style={styles.featTitle} numberOfLines={2}>{meal.name}</Text>
+                        <Text style={styles.featCal}>
+                          {meal.calories != null ? `${meal.calories} kcal` : 'Calories unavailable'}
+                        </Text>
+                        <View style={styles.featBottomRow}>
+                          <Text style={styles.featPrice}>{formatPrice(meal.price)}</Text>
+                          <TouchableOpacity
+                            style={styles.featAddBtn}
+                            accessibilityLabel={`Add ${meal.name} to cart`}
+                            onPress={() => addItem({
+                              id: String(meal.id),
+                              name: meal.name,
+                              price: Number(meal.price) || 0,
+                              image: meal.image || undefined,
+                              calories: meal.calories,
+                              meta: { kind: 'meal', meal_item_id: meal.id },
+                            })}
+                          >
+                            <Ionicons name="add" size={16} color="#4B8E3D" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          );
+        })}
+
+        {/* ─── FEATURED MEALS ─── */}
+        {!hasCmsMealBlocks && <>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionHeading}>Featured Meal</Text>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.mealStripContent}
+          >
           {featuredMeals && featuredMeals.length > 0 ? featuredMeals.slice(0, 4).map((meal) => {
             const price = typeof meal.price === 'string' ? parseFloat(meal.price) : meal.price || 0;
             return (
@@ -409,7 +735,8 @@ export default function HomeScreen() {
               {isFeaturedLoading ? 'Loading featured meals...' : 'No featured meals available'}
             </Text>
           )}
-        </ScrollView>
+          </ScrollView>
+        </>}
 
         {/* ─── FOOTER ─── */}
         {homeLayout?.home_footer_text ? (
@@ -458,11 +785,31 @@ const styles = StyleSheet.create({
   },
   pointsText: { fontSize: 13, fontWeight: '700', color: '#0B262F' },
   heroContent: { zIndex: 10, marginTop: 24, position: 'relative' },
+  heroSlides: { marginTop: 8, zIndex: 10 },
+  heroSlidesContent: { alignItems: 'stretch' },
+  heroSlide: { width: CARD_WIDTH, minHeight: 110, position: 'relative', justifyContent: 'center' },
+  heroSlideCopy: { width: '66%', zIndex: 3, paddingBottom: 8 },
   heroTitle: {
     fontSize: 24, fontWeight: '800', color: '#fff', lineHeight: 32, letterSpacing: 0.5,
     width: 210,
     textAlign: 'left',
   },
+  heroSubtitle: { color: '#EAF5EA', fontSize: 14, fontWeight: '600', lineHeight: 19, marginTop: 2 },
+  heroDescription: { color: '#D5E7D6', fontSize: 12, lineHeight: 16, marginTop: 2 },
+  heroButton: {
+    alignSelf: 'flex-start', marginTop: 7, paddingHorizontal: 13, paddingVertical: 6,
+    borderRadius: 999, backgroundColor: '#fff',
+  },
+  heroButtonText: { color: '#075312', fontSize: 12, fontWeight: '700' },
+  heroSlideImage: {
+    width: '44%', height: 115, position: 'absolute', right: -6, bottom: -4, zIndex: 2,
+  },
+  heroDots: {
+    position: 'absolute', bottom: 7, left: 0, right: 0, zIndex: 12,
+    flexDirection: 'row', justifyContent: 'center', gap: 5,
+  },
+  heroDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.4)' },
+  heroDotActive: { width: 16, backgroundColor: '#fff' },
   heroLeftDish: {
     width: 120, height: 120, position: 'absolute', left: -50, bottom: -20, zIndex: 2,
   },
@@ -490,6 +837,7 @@ const styles = StyleSheet.create({
     marginTop: 10, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, alignSelf: 'flex-start',
   },
   promoSliderBtnText: { fontSize: 13, fontWeight: '600' },
+  inlinePromoWrap: { paddingHorizontal: 20, marginTop: 20, alignItems: 'center' },
 
   /* Action Cards */
   sectionPad: { paddingHorizontal: 20, marginTop: 12 },
@@ -508,9 +856,11 @@ const styles = StyleSheet.create({
   quickTitle: { fontSize: 16, fontWeight: '700', color: '#111', lineHeight: 20 },
   quickImgLeftPlats: { width: 110, height: 110, position: 'absolute', right: 40, bottom: 0 },
   quickImgRightPlats: { width: 110, height: 110, position: 'absolute', right: -30, bottom: -20 },
+  quickCmsImg: { width: 130, height: 110, position: 'absolute', right: -8, bottom: 0 },
   
   consultImg: { width: 90, height: 105, position: 'absolute', right: 0, bottom: -5 },
   homeCardIcon: { position: 'absolute', right: 24, top: 0, bottom: 0, justifyContent: 'center' },
+  serviceCmsImg: { width: 105, height: 105, position: 'absolute', right: 4, bottom: 0 },
 
   /* Section Headings */
   sectionHeader: { paddingHorizontal: 20, marginTop: 24 },
@@ -538,6 +888,7 @@ const styles = StyleSheet.create({
   featBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
   featPrice: { fontSize: 18, fontWeight: '600', color: '#4B8E3D' },
   featAddBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center' },
+  mealStripContent: { paddingHorizontal: 20, gap: 16, marginTop: 16 },
 
   /* Footer Target */
   footerWrap: { paddingHorizontal: 20, marginTop: 40 },

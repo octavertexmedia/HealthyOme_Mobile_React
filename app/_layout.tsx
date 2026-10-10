@@ -10,7 +10,7 @@ import { colors } from '../src/shared/theme';
 import * as SplashScreen from 'expo-splash-screen';
 import { setAuthFailureHandler } from '../src/shared/api/client';
 import { useAuthStore } from '../src/features/auth/store/auth.store';
-import { registerPushToken } from '../src/features/notifications/registerPushToken';
+import { registerPushToken, unregisterPushToken } from '../src/features/notifications/registerPushToken';
 import { usePushDeepLink } from '../src/features/notifications/usePushDeepLink';
 import { useCartSync } from '../src/features/cart/hooks/useCartSync';
 import { initSentry } from '../src/shared/observability/sentry';
@@ -23,12 +23,14 @@ export default function RootLayout() {
   const router = useRouter();
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const pushEnabled = useAuthStore((s) => s.user?.notify_push !== false);
   const [ready, setReady] = useState(false);
   usePushDeepLink();
   useCartSync();
 
   useEffect(() => {
     setAuthFailureHandler(() => {
+      useAuthStore.getState().clearSession().catch(() => {});
       router.replace('/(auth)/login' as any);
     });
   }, [router]);
@@ -51,10 +53,12 @@ export default function RootLayout() {
   }, [restoreSession]);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && pushEnabled) {
       registerPushToken().catch(() => {});
+    } else {
+      unregisterPushToken().catch(() => {});
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, pushEnabled]);
 
   if (!ready) return null;
 

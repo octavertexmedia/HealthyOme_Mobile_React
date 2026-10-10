@@ -51,10 +51,54 @@ export interface CreateOrderRequest {
   items?: CreateOrderItem[];
   /** replace server cart with items (default true) */
   replace?: boolean;
-  /** subscription checkout payload */
-  subscription?: Record<string, unknown>;
-  /** subscription recharge payload */
-  recharge?: Record<string, unknown>;
+}
+
+/**
+ * Validated by the backend's subscription checkout contract before Razorpay
+ * creates an order. A subscription is only fulfilled after payment
+ * verification (or completion of a legitimate zero-rupee coupon checkout).
+ */
+export interface SubscriptionCheckoutPayload {
+  meal_plan_type_id: number;
+  subscription_period_id: number;
+  category_id?: number | null;
+  meal_time_ids: number[];
+  /** ISO calendar date (YYYY-MM-DD). */
+  start_date: string;
+  /** Backend weekday convention: Monday = 0 through Sunday = 6. */
+  veg_days: number[];
+  reminder_days_before?: number;
+  delivery_instructions?: string;
+  whatsapp_updates?: boolean;
+}
+
+/**
+ * The subscription variant of POST /payments/razorpay/create-order/.
+ * Keeping this separate from ordinary cart lines prevents a catalog plan id
+ * from being mistaken for an existing ActiveMealPlan id.
+ */
+export interface CreateSubscriptionOrderRequest {
+  currency?: string;
+  amount?: number;
+  coupon_code?: string;
+  address_id: number;
+  email: string;
+  notes?: Record<string, unknown>;
+  subscription: SubscriptionCheckoutPayload;
+}
+
+export interface SubscriptionRechargePayload {
+  subscription_id: number;
+  subscription_period_id: number;
+}
+
+export interface CreateSubscriptionRechargeOrderRequest {
+  currency?: string;
+  amount?: number;
+  coupon_code?: string;
+  email: string;
+  notes?: Record<string, unknown>;
+  recharge: SubscriptionRechargePayload;
 }
 
 /**
@@ -155,6 +199,26 @@ export const paymentsApi = {
   },
 
   async createOrder(body: CreateOrderRequest): Promise<CreateOrderResponse> {
+    const { data } = await apiClient.post<CreateOrderResponse>(
+      '/payments/razorpay/create-order/',
+      body
+    );
+    return data;
+  },
+
+  async createSubscriptionOrder(
+    body: CreateSubscriptionOrderRequest
+  ): Promise<CreateOrderResponse> {
+    const { data } = await apiClient.post<CreateOrderResponse>(
+      '/payments/razorpay/create-order/',
+      body
+    );
+    return data;
+  },
+
+  async createSubscriptionRechargeOrder(
+    body: CreateSubscriptionRechargeOrderRequest
+  ): Promise<CreateOrderResponse> {
     const { data } = await apiClient.post<CreateOrderResponse>(
       '/payments/razorpay/create-order/',
       body

@@ -58,23 +58,30 @@ export interface MealItem {
 export interface HeroSlide {
   id: number;
   title: string;
-  subtitle: string;
-  description: string;
-  image_url: string | null;
-  button_text: string;
-  button_link: string;
-  order: number;
+  subtitle?: string;
+  description?: string;
+  image_url?: string | null;
+  button_text?: string;
+  button_link?: string;
+  order?: number;
 }
 
 export interface SiteSettings {
-  site_name: string;
-  tagline: string;
-  contact_email: string;
-  contact_phone_1: string;
-  contact_phone_2: string;
-  address: string;
-  instagram_url: string;
-  whatsapp_number: string;
+  site_name?: string;
+  tagline?: string;
+  contact_email?: string;
+  contact_phone_1?: string;
+  contact_phone_2?: string;
+  address?: string;
+  instagram_url?: string;
+  whatsapp_number?: string;
+  custom_bowl_checkout_enabled?: boolean;
+  healthy_snacks_enabled?: boolean;
+  functional_training_customer_enabled?: boolean;
+  home_subscription_card_enabled?: boolean;
+  home_quick_meals_card_enabled?: boolean;
+  home_healthy_snacks_card_enabled?: boolean;
+  home_consult_card_enabled?: boolean;
 }
 
 export interface PromoBanner {
@@ -86,7 +93,8 @@ export interface PromoBanner {
   button_text_color: string;
   right_image_src: string;
   order: number;
-  coupon_code: string;
+  coupon_code?: string;
+  show_in_top_carousel?: boolean;
 }
 
 export interface HomeLayoutBlockMeal {
@@ -100,7 +108,7 @@ export interface HomeLayoutBlockMeal {
 
 export interface HomePageBlock {
   id: number;
-  block_type: string;
+  block_type: 'meal_strip' | 'promo';
   title: string;
   order: number;
   meals: HomeLayoutBlockMeal[];
@@ -112,14 +120,19 @@ export interface HomeLayout {
   home_footer_text: string;
   subscription_card_title: string;
   subscription_card_subtitle: string;
+  subscription_card_image_src?: string;
   quick_meals_title: string;
   quick_meals_subtitle: string;
+  quick_meals_card_image_src?: string;
   healthy_snacks_card_title: string;
   healthy_snacks_card_subtitle: string;
+  healthy_snacks_card_image_src?: string;
   consult_card_title: string;
   consult_card_subtitle: string;
+  consult_card_image_src?: string;
   functional_training_card_title: string;
   functional_training_card_subtitle: string;
+  functional_training_card_image_src?: string;
   hero_slides: HeroSlide[];
   promo_banners: PromoBanner[];
   home_page_blocks: HomePageBlock[];

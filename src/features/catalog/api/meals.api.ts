@@ -83,12 +83,26 @@ export const mealsApi = {
 
   getSiteSettings: async (): Promise<SiteSettings> => {
     const response = await apiClient.get<SiteSettings>('/site-settings/active/');
-    return response.data;
+    return response.data || {};
   },
 
   getHomeLayout: async (): Promise<HomeLayout> => {
     const response = await apiClient.get<HomeLayout>('/home-layout/');
-    return response.data;
+    const data = response.data;
+    // Keep CMS ordering deterministic and tolerate older deployments that omit
+    // one of the optional collections.
+    return {
+      ...data,
+      hero_slides: [...(data.hero_slides ?? [])].sort(
+        (left, right) => (left.order ?? 0) - (right.order ?? 0)
+      ),
+      promo_banners: [...(data.promo_banners ?? [])].sort(
+        (left, right) => left.order - right.order
+      ),
+      home_page_blocks: [...(data.home_page_blocks ?? [])].sort(
+        (left, right) => left.order - right.order
+      ),
+    };
   },
 
   getMealCategories: async (): Promise<MealCategory[]> => {

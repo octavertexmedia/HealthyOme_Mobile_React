@@ -1,0 +1,11 @@
+appId: com.healthyome.app
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: 'Skip'
+    timeout: 15000
+- tapOn: 'Skip'
+- assertVisible: 'Find healthy food near you'
+- assertVisible: 'Use Current Location'
+- assertVisible: 'Or Select a Pickup Point'

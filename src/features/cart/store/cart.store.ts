@@ -3,7 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { zustandStorage } from '../../../shared/storage/mmkv';
 import { useAuthStore } from '../../auth/store/auth.store';
 import { cartApi } from '../api/cart.api';
-import type { ServerCart, ServerCartItem } from '../api/cart.api';
+import type { ServerCart } from '../api/cart.api';
+import { mergeServerCartItems } from '../utils/cartReconciliation';
 
 export interface CartItem {
   id: string;
@@ -18,6 +19,7 @@ export interface CartItem {
 }
 
 interface CartStore {
+  ownerId: number | null;
   items: CartItem[];
   totalItems: number;
   totalPrice: number;
@@ -34,22 +36,6 @@ const recalculate = (items: CartItem[]) => ({
   totalPrice: items.reduce((sum, i) => sum + i.price * i.qty, 0),
 });
 
-/**
- * Stable local id for a server line. Meal lines key by meal id (so they match
- * the ids used by the menu/home/meal screens); snack and custom-bowl lines key
- * by their own id, since meal_item_id is null for them.
- */
-const localIdForServerItem = (si: ServerCartItem): string => {
-  if (si.meal_item_id != null) return String(si.meal_item_id);
-  if (si.snack_item_id != null) return `snack-${si.snack_item_id}`;
-  if (si.custom_bowl_id != null) return `bowl-${si.custom_bowl_id}`;
-  return `cart-${si.id}`;
-};
-
-/** A local-only line (e.g. a custom bowl) that the server snapshot can't carry. */
-const isLocalOnly = (item: CartItem): boolean =>
-  item.id.startsWith('bowl-') || item.meta?.kind === 'custom-bowl';
-
 const isAuthed = () => useAuthStore.getState().isAuthenticated;
 
 export const useCartStore = create<CartStore>()(
@@ -63,14 +49,19 @@ export const useCartStore = create<CartStore>()(
        */
       const reconcile = (run: () => Promise<ServerCart>) => {
         if (!isAuthed()) return;
+        const sessionRevision = useAuthStore.getState().sessionRevision;
         run()
-          .then((server) => get().hydrateFromServer(server))
+          .then((server) => {
+            const session = useAuthStore.getState();
+            if (session.isAuthenticated && session.sessionRevision === sessionRevision) get().hydrateFromServer(server);
+          })
           .catch(() => {
             /* keep optimistic local state; retried on next sync */
           });
       };
 
       return {
+        ownerId: null,
         items: [],
         totalItems: 0,
         totalPrice: 0,
@@ -88,7 +79,7 @@ export const useCartStore = create<CartStore>()(
             updated = [...items, { ...item, qty: quantity }];
           }
 
-          set({ items: updated, ...recalculate(updated) });
+          set({ items: updated, ownerId: useAuthStore.getState().user?.id ?? get().ownerId, ...recalculate(updated) });
           // NOTE: server add is intentionally NOT fired here — the meal-detail
           // screen already POSTs /cart/add/ itself, so syncing in-store too
           // would double-add. Menu/home quick-adds reconcile via useCartSync.
@@ -137,25 +128,11 @@ export const useCartStore = create<CartStore>()(
         },
 
         hydrateFromServer: (cart) => {
-          const serverItems: CartItem[] = (cart.items ?? []).map((si) => ({
-            id: localIdForServerItem(si),
-            serverItemId: si.id,
-            name: si.name,
-            price: Number(si.unit_price ?? si.price),
-            qty: si.quantity,
-            image: si.image,
-            calories: si.calories,
-          }));
+          // Preserve every optimistic row that has not received a server line
+          // id yet. A reconciliation must never make another local add vanish.
+          const items = mergeServerCartItems(cart.items ?? [], get().items);
 
-          // Preserve local-only lines (custom bowls) the server can't represent
-          // so a server reconcile never silently drops them.
-          const serverIds = new Set(serverItems.map((i) => i.id));
-          const preserved = get().items.filter(
-            (i) => isLocalOnly(i) && !serverIds.has(i.id)
-          );
-          const items = [...serverItems, ...preserved];
-
-          set({ items, ...recalculate(items) });
+          set({ items, ownerId: useAuthStore.getState().user?.id ?? get().ownerId, ...recalculate(items) });
         },
       };
     },
@@ -165,3 +142,13 @@ export const useCartStore = create<CartStore>()(
     }
   )
 );
+
+// A local reset must not DELETE the previous customer's server cart. Ignore
+// late server responses through sessionRevision checks above and in useCartSync.
+useAuthStore.subscribe((session, previous) => {
+  const ownerId = useCartStore.getState().ownerId;
+  if ((previous.isAuthenticated && !session.isAuthenticated) ||
+      (session.user && ownerId !== null && ownerId !== session.user.id)) {
+    useCartStore.setState({ items: [], totalItems: 0, totalPrice: 0, ownerId: null });
+  }
+});

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput,
   KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Alert, RefreshControl,
@@ -8,12 +8,54 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { addressesApi, type UserAddress, type CreateAddressPayload } from '../../src/features/addresses/api/addresses.api';
+import {
+  approvedPincodes,
+  validateAddressDraft,
+  type AddressDraft,
+} from '../../src/features/addresses/addressValidation';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { colors } from '../../src/shared/theme';
 import EmptyState from '../../src/shared/components/EmptyState';
 import DeliveryAreaPicker, { type DeliveryAreaSelection } from '../../src/features/delivery-areas/components/DeliveryAreaPicker';
+import ServiceAreaWaitlistModal from '../../src/features/delivery-areas/components/ServiceAreaWaitlistModal';
+import { useGroupedDeliveryAreas } from '../../src/features/delivery-areas/hooks/useDeliveryAreas';
+import { subscriptionApi } from '../../src/features/subscription/api/subscription.api';
+import { MealTimeAddressSelector } from '../../src/features/addresses/MealTimeAddressSelector';
+import { validateMealTimeAddressSelection } from '../../src/features/addresses/mealTimeAddressPolicy';
 
 const ADDRESSES_KEY = ['addresses'];
+
+function emptyDraft(contactNumber = ''): AddressDraft {
+  return {
+    label: '',
+    address: '',
+    address_line1: '',
+    address_line2: '',
+    pincode: '',
+    landmark: '',
+    contact_number: contactNumber,
+    delivery_area_id: null,
+    default_meal_time_ids: [],
+  };
+}
+
+function userPhoneSeed(phoneNumber?: string, username?: string): string {
+  const raw = phoneNumber || username || '';
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : '';
+}
+
+function apiErrorMessage(error: unknown, fallback: string): string {
+  const data = (error as { response?: { data?: unknown } })?.response?.data;
+  if (!data || typeof data !== 'object') return fallback;
+  const body = data as Record<string, unknown>;
+  if (typeof body.error === 'string') return body.error;
+  for (const value of Object.values(body)) {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  }
+  return fallback;
+}
 
 export default function AddressesScreen() {
   const router = useRouter();
@@ -21,19 +63,32 @@ export default function AddressesScreen() {
   const qc = useQueryClient();
 
   const [showModal, setShowModal] = useState(false);
+  const [showWaitlist, setShowWaitlist] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<CreateAddressPayload>({
-    label: '',
-    address: '',
-    landmark: '',
-    contact_number: '',
-    delivery_area_id: undefined,
-  });
+  const [form, setForm] = useState<AddressDraft>(() => emptyDraft());
   const [areaName, setAreaName] = useState<string>('');
   const [showAreaPicker, setShowAreaPicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const groupedAreasQuery = useGroupedDeliveryAreas();
+  const mealTimesQuery = useQuery({
+    queryKey: ['subscription-meal-times', 'all'], queryFn: () => subscriptionApi.getMealTimes(), enabled: isAuthenticated,
+  });
+
+  const allAreas = useMemo(
+    () => [
+      ...(groupedAreasQuery.data?.subscribed_meals ?? []),
+      ...(groupedAreasQuery.data?.quick_meals ?? []),
+    ],
+    [groupedAreasQuery.data],
+  );
+  const selectedArea = useMemo(
+    () => allAreas.find((area) => area.id === form.delivery_area_id) ?? null,
+    [allAreas, form.delivery_area_id],
+  );
+  const selectedPincodes = useMemo(() => approvedPincodes(selectedArea), [selectedArea]);
 
   const addressesQuery = useQuery({
     queryKey: ADDRESSES_KEY,
@@ -45,10 +100,12 @@ export default function AddressesScreen() {
     mutationFn: (payload: CreateAddressPayload) => addressesApi.create(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADDRESSES_KEY });
+      qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
       closeModal();
     },
-    onError: (e: any) => {
-      Alert.alert('Could not save', e?.response?.data?.error || 'Please check the address and try again.');
+    onError: (error: unknown) => {
+      Alert.alert('Could not save', apiErrorMessage(error, 'Please check the address and try again.'));
     },
   });
 
@@ -57,26 +114,28 @@ export default function AddressesScreen() {
       addressesApi.update(params.id, params.payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADDRESSES_KEY });
+      qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
       closeModal();
     },
-    onError: (e: any) => {
-      Alert.alert('Could not update', e?.response?.data?.error || 'Please try again.');
+    onError: (error: unknown) => {
+      Alert.alert('Could not update', apiErrorMessage(error, 'Please try again.'));
     },
   });
 
   const removeMutation = useMutation({
     mutationFn: (id: number) => addressesApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ADDRESSES_KEY }),
-    onError: (e: any) => {
-      Alert.alert('Could not delete', e?.response?.data?.error || 'Please try again.');
+    onError: (error: unknown) => {
+      Alert.alert('Could not delete', apiErrorMessage(error, 'Please try again.'));
     },
   });
 
   const setDefaultMutation = useMutation({
     mutationFn: (id: number) => addressesApi.setDefault(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ADDRESSES_KEY }),
-    onError: (e: any) => {
-      Alert.alert('Could not set default', e?.response?.data?.error || 'Please try again.');
+    onError: (error: unknown) => {
+      Alert.alert('Could not set default', apiErrorMessage(error, 'Please try again.'));
     },
   });
 
@@ -88,7 +147,7 @@ export default function AddressesScreen() {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm({ label: '', address: '', landmark: '', contact_number: '', delivery_area_id: undefined });
+    setForm(emptyDraft(userPhoneSeed(user?.phone_number, user?.username)));
     setAreaName('');
     setShowModal(true);
   };
@@ -98,16 +157,31 @@ export default function AddressesScreen() {
     setForm({
       label: a.label,
       address: a.address,
+      address_line1: a.address_line1 || a.address,
+      address_line2: a.address_line2 || '',
+      pincode: a.pincode || '',
       landmark: a.landmark,
       contact_number: a.contact_number,
-      delivery_area_id: a.delivery_area?.id,
+      delivery_area_id: a.delivery_area?.id ?? null,
+      is_default: a.is_default,
+      default_meal_time_ids: a.default_meal_time_ids ?? [],
     });
     setAreaName(a.delivery_area?.name ?? '');
     setShowModal(true);
   };
 
   const handleAreaSelect = (area: DeliveryAreaSelection) => {
-    setForm((prev) => ({ ...prev, delivery_area_id: area.id }));
+    const fullArea = allAreas.find((candidate) => candidate.id === area.id);
+    const pincodes = approvedPincodes(fullArea);
+    setForm((prev) => ({
+      ...prev,
+      delivery_area_id: area.id,
+      pincode: pincodes.includes(prev.pincode)
+        ? prev.pincode
+        : pincodes.length === 1
+          ? pincodes[0]
+          : '',
+    }));
     setAreaName(area.name);
   };
 
@@ -124,15 +198,31 @@ export default function AddressesScreen() {
   };
 
   const handleSave = () => {
-    if (!form.address?.trim()) {
-      Alert.alert('Address required', 'Please enter your street address.');
+    if (createMutation.isPending || updateMutation.isPending || !isAuthenticated) return;
+    const result = validateAddressDraft(form, selectedArea);
+    if (!result.ok) {
+      Alert.alert('Check your address', result.message);
       return;
     }
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, payload: form });
-    } else {
-      createMutation.mutate(form);
+    try {
+      const ids = validateMealTimeAddressSelection(form.default_meal_time_ids ?? [], selectedArea, mealTimesQuery.isSuccess ? mealTimesQuery.data.meal_times : undefined);
+      const payload = { ...result.payload, default_meal_time_ids: ids };
+      if (editingId) updateMutation.mutate({ id: editingId, payload });
+      else createMutation.mutate(payload);
+    } catch (error) {
+      Alert.alert('Check meal-time addresses', error instanceof Error ? error.message : 'Please review the selections.');
     }
+  };
+
+  const openWaitlist = () => {
+    setShowAreaPicker(false);
+    setShowModal(false);
+    setShowWaitlist(true);
+  };
+
+  const cancelWaitlist = () => {
+    setShowWaitlist(false);
+    setShowModal(true);
   };
 
   const addresses = addressesQuery.data ?? [];
@@ -194,10 +284,16 @@ export default function AddressesScreen() {
                 )}
               </View>
 
-              <Text style={styles.addressLine1}>{a.address}</Text>
+              <Text style={styles.addressLine1}>{a.address_line1 || a.address}</Text>
+              {!!a.address_line2 && <Text style={styles.addressLine2}>{a.address_line2}</Text>}
               {!!a.landmark && <Text style={styles.addressLine2}>Near {a.landmark}</Text>}
-              {!!a.delivery_area?.name && <Text style={styles.addressLine2}>{a.delivery_area.name}</Text>}
+              {!!a.delivery_area?.name && (
+                <Text style={styles.addressLine2}>
+                  {[a.delivery_area.name, a.pincode].filter(Boolean).join(' · ')}
+                </Text>
+              )}
               {!!a.contact_number && <Text style={styles.addressLine2}>{a.contact_number}</Text>}
+              {!!a.default_meal_time_ids?.length && <Text style={styles.addressLine2}>Usual address: {a.default_meal_time_ids.map((id) => mealTimesQuery.data?.meal_times.find((item) => item.id === id)?.name || `Meal time #${id}`).join(', ')}</Text>}
 
               <View style={styles.actionRow}>
                 {!a.is_default && (
@@ -240,62 +336,96 @@ export default function AddressesScreen() {
               </TouchableOpacity>
             </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Label (e.g. Home, Work)"
-              placeholderTextColor="#9CA3AF"
-              value={form.label}
-              onChangeText={(v) => setForm({ ...form, label: v })}
-            />
-            <TextInput
-              style={[styles.input, { minHeight: 80, textAlignVertical: 'top', paddingTop: 12 }]}
-              placeholder="Street address"
-              placeholderTextColor="#9CA3AF"
-              value={form.address}
-              onChangeText={(v) => setForm({ ...form, address: v })}
-              multiline
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Landmark (optional)"
-              placeholderTextColor="#9CA3AF"
-              value={form.landmark || ''}
-              onChangeText={(v) => setForm({ ...form, landmark: v })}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Contact number"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="phone-pad"
-              value={form.contact_number || ''}
-              onChangeText={(v) => setForm({ ...form, contact_number: v })}
-            />
-            <TouchableOpacity
-              style={styles.selectInput}
-              onPress={() => setShowAreaPicker(true)}
-              activeOpacity={0.7}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.formContent}
             >
-              <Ionicons name="location-outline" size={18} color="#6B7280" />
-              <Text
-                style={[styles.selectInputText, !areaName && styles.selectInputPlaceholder]}
-                numberOfLines={1}
+              <TextInput
+                style={styles.input}
+                placeholder="Label (e.g. Home, Work)"
+                placeholderTextColor="#9CA3AF"
+                value={form.label}
+                onChangeText={(v) => setForm({ ...form, label: v })}
+              />
+              <TouchableOpacity
+                style={styles.selectInput}
+                onPress={() => setShowAreaPicker(true)}
+                activeOpacity={0.7}
               >
-                {areaName || 'Select delivery area'}
-              </Text>
-              <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.addBtn, { marginTop: 12, opacity: saving ? 0.6 : 1 }]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.addBtnText}>{editingId ? 'Update Address' : 'Save Address'}</Text>
+                <Ionicons name="location-outline" size={18} color="#6B7280" />
+                <Text
+                  style={[styles.selectInputText, !areaName && styles.selectInputPlaceholder]}
+                  numberOfLines={1}
+                >
+                  {areaName || 'Select delivery area *'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.waitlistLink} onPress={openWaitlist}>
+                <Text style={styles.waitlistLinkText}>We don’t serve my area yet — notify me</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder="Line 1 — flat, wing or building *"
+                placeholderTextColor="#9CA3AF"
+                value={form.address_line1}
+                onChangeText={(v) => setForm({ ...form, address_line1: v })}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Line 2 — street or locality"
+                placeholderTextColor="#9CA3AF"
+                value={form.address_line2}
+                onChangeText={(v) => setForm({ ...form, address_line2: v })}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder={selectedPincodes.length > 0 ? 'Pincode *' : 'Pincode'}
+                placeholderTextColor="#9CA3AF"
+                keyboardType="number-pad"
+                maxLength={6}
+                value={form.pincode}
+                onChangeText={(v) => setForm({ ...form, pincode: v.replace(/\D/g, '').slice(0, 6) })}
+              />
+              {selectedPincodes.length > 0 && (
+                <Text style={styles.pincodeHint}>
+                  Available: {selectedPincodes.join(', ')}
+                </Text>
               )}
-            </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder="Landmark (optional)"
+                placeholderTextColor="#9CA3AF"
+                value={form.landmark || ''}
+                onChangeText={(v) => setForm({ ...form, landmark: v })}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Contact number"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="phone-pad"
+                value={form.contact_number || ''}
+                onChangeText={(v) => setForm({ ...form, contact_number: v })}
+              />
+
+              {mealTimesQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+              {mealTimesQuery.isError ? <TouchableOpacity style={styles.waitlistLink} onPress={() => mealTimesQuery.refetch()}><Text style={styles.waitlistLinkText}>Could not load meal times. Tap to retry.</Text></TouchableOpacity> : null}
+              <MealTimeAddressSelector options={mealTimesQuery.data?.meal_times ?? []} selected={form.default_meal_time_ids ?? []}
+                acceptedArea={selectedArea?.is_accepted === true} disabled={saving || mealTimesQuery.isFetching}
+                onChange={(ids) => setForm((current) => ({ ...current, default_meal_time_ids: ids }))} />
+              <TouchableOpacity
+                style={[styles.addBtn, { marginTop: 12, opacity: saving ? 0.6 : 1 }]}
+                onPress={handleSave}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.addBtnText}>{editingId ? 'Update Address' : 'Save Address'}</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -305,6 +435,17 @@ export default function AddressesScreen() {
         onClose={() => setShowAreaPicker(false)}
         onSelect={handleAreaSelect}
         selectedId={form.delivery_area_id ?? null}
+      />
+      <ServiceAreaWaitlistModal
+        visible={showWaitlist}
+        onClose={cancelWaitlist}
+        onSubmitted={() => {
+          setShowWaitlist(false);
+          closeModal();
+        }}
+        initialEmail={user?.email ?? ''}
+        initialPhone={form.contact_number || userPhoneSeed(user?.phone_number, user?.username)}
+        initialArea={areaName || form.address_line2}
       />
     </View>
   );
@@ -358,9 +499,13 @@ const styles = StyleSheet.create({
   addBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 },
+  modalContent: {
+    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, maxHeight: '92%',
+  },
   modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#111' },
+  formContent: { paddingBottom: 4 },
   input: {
     backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
     paddingHorizontal: 16, height: 50, marginBottom: 12, fontSize: 15,
@@ -372,4 +517,7 @@ const styles = StyleSheet.create({
   },
   selectInputText: { flex: 1, fontSize: 15, color: '#111' },
   selectInputPlaceholder: { color: '#9CA3AF' },
+  waitlistLink: { alignSelf: 'flex-start', marginTop: -2, marginBottom: 14 },
+  waitlistLinkText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+  pincodeHint: { fontSize: 12, color: '#6B7280', marginTop: -8, marginBottom: 12 },
 });

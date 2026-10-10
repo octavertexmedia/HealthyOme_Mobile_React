@@ -19,9 +19,8 @@ import {
   type OrderTracking,
   type OrderStatus,
 } from '../../../src/features/orders/api/orders.api';
+import { canCancelOrder } from '../../../src/features/orders/orderPolicies';
 import { getImageUrl } from '../../../src/shared/utils/helpers';
-
-const CANCELLABLE: OrderStatus[] = ['pending', 'confirmed'];
 
 export default function OrderDetailScreen() {
   const router = useRouter();
@@ -80,7 +79,8 @@ export default function OrderDetailScreen() {
   const detail = detailQuery.data;
   const tracking = trackQuery.data;
   const status = tracking?.status ?? detail?.status;
-  const canCancel = status ? CANCELLABLE.includes(status) : false;
+  const canCancel =
+    tracking?.cancellable ?? canCancelOrder(detail?.order_type, status);
 
   const headerColor = useMemo(() => {
     switch (status) {

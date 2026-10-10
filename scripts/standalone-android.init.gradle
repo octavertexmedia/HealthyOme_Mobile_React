@@ -1,0 +1,13 @@
+// Add the previously generated local bundle to a DEBUG-signed test APK.
+gradle.afterProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            def output = new File(project.rootDir.parentFile, 'artifacts/bundled/android')
+            if (!new File(output, 'assets/index.android.bundle').isFile()) {
+                throw new GradleException('Run node scripts/bundle-native.cjs android first.')
+            }
+            project.android.sourceSets.debug.assets.srcDir(new File(output, 'assets'))
+            project.android.sourceSets.debug.res.srcDir(new File(output, 'res'))
+        }
+    }
+}

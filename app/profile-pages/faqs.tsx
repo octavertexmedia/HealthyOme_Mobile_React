@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import apiClient from '../../src/shared/api/client';
-import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
 
 export default function FAQsScreen() {
   const router = useRouter();

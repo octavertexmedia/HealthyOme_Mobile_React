@@ -70,7 +70,9 @@ export const useSiteSettings = () => {
   return useQuery({
     queryKey: ['siteSettings'],
     queryFn: mealsApi.getSiteSettings,
-    staleTime: 60 * 60 * 1000,
+    // These settings also contain customer-facing feature flags. Keep them
+    // fresh enough that an admin can disable a surface without a one-hour lag.
+    staleTime: 5 * 60 * 1000,
   });
 };
 

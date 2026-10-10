@@ -8,6 +8,8 @@ import { tokenStore } from '../storage/tokens';
 
 const API_BASE_URL = env.apiUrl;
 
+// Axios exposes `create` on its default export; this is the documented factory API.
+// eslint-disable-next-line import/no-named-as-default-member
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,

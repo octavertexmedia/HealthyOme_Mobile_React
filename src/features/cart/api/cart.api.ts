@@ -70,7 +70,7 @@ export interface CheckoutQuote {
   discount: number;
   payable_total: number;
   meets_minimum_order: boolean;
-  can_checkout?: boolean;
+  can_checkout: boolean;
   zero_rupee_checkout: boolean;
   error: string | null;
   error_message: string | null;

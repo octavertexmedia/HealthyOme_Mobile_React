@@ -208,7 +208,7 @@ export default function MyConsultationsScreen() {
         ) : bookingsQuery.isError ? (
           <View style={styles.empty}>
             <Ionicons name="cloud-offline-outline" size={36} color="#9CA3AF" />
-            <Text style={styles.emptyTitle}>Couldn't load your consultations</Text>
+            <Text style={styles.emptyTitle}>Couldn&apos;t load your consultations</Text>
             <Text style={styles.emptySub}>Check your connection and try again.</Text>
             <TouchableOpacity style={styles.emptyBtn} onPress={() => bookingsQuery.refetch()}>
               <Text style={styles.emptyBtnText}>Retry</Text>
@@ -253,6 +253,10 @@ export default function MyConsultationsScreen() {
                     {b.needs_payment ? 'Payment pending' : 'Paid'}
                   </Text>
                 </Text>
+
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => router.push(`/consult/manage/${b.id}` as any)}>
+                  <Text style={styles.cancelBtnText}>Health details, preferences & meal plan</Text>
+                </TouchableOpacity>
 
                 {(needsPay || canCancel || canReview) && (
                   <View style={styles.cardActions}>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -6,8 +6,6 @@ import { storage } from '../src/shared/storage/mmkv';
 
 export default function SplashScreen() {
   const router = useRouter();
-  const [isReady, setIsReady] = useState(false);
-
   useEffect(() => {
     let mounted = true;
 

@@ -1,16 +1,12 @@
 /**
  * Sentry init for React Native.
  *
- * Gated on EXPO_PUBLIC_SENTRY_DSN. If unset or @sentry/react-native is not
- * installed, this is a no-op. Production builds set the env var via EAS.
- *
- * Install:
- *   npm i @sentry/react-native
- *   npx expo prebuild --clean        # native config plugin requires it
+ * Gated on EXPO_PUBLIC_SENTRY_DSN. If unset, collection remains disabled.
  *
  * Then call initSentry() once at the top of app/_layout.tsx.
  */
 import { env } from '../config/env';
+import * as Sentry from '@sentry/react-native';
 
 let initialized = false;
 
@@ -19,13 +15,6 @@ export function initSentry(): void {
 
   const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN ?? '';
   if (!dsn) return;
-
-  let Sentry: any;
-  try {
-    Sentry = require('@sentry/react-native');
-  } catch {
-    return; // SDK not installed yet — safe no-op
-  }
 
   Sentry.init({
     dsn,
@@ -39,12 +28,7 @@ export function initSentry(): void {
 }
 
 export function reportError(err: unknown): void {
-  let Sentry: any;
-  try {
-    Sentry = require('@sentry/react-native');
-  } catch {
-    return;
-  }
+  if (!initialized) return;
   if (err instanceof Error) Sentry.captureException(err);
   else Sentry.captureMessage(String(err));
 }

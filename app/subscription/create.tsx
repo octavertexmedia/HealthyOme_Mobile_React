@@ -1,19 +1,21 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput, Switch,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors, spacing, borderRadius, typography } from '../../src/shared/theme';
 import Button from '../../src/shared/components/Button';
 import { subscriptionApi, type SubscriptionPlan } from '../../src/features/subscription/api/subscription.api';
 import { addressesApi } from '../../src/features/addresses/api/addresses.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import { usePayment } from '../../src/features/payments/hooks/usePayment';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const INSTRUCTIONS_OPTIONS = ['Hand it to me', 'Leave at door', 'Call when arriving'];
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function tomorrowIsoDate(): string {
   const d = new Date();
@@ -24,10 +26,22 @@ function tomorrowIsoDate(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function isValidIsoDate(value: string): boolean {
+  if (!ISO_DATE_PATTERN.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
 export default function CreateSubscription() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const { pay, loading: paying } = usePayment();
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
@@ -37,7 +51,8 @@ export default function CreateSubscription() {
   const [vegDays, setVegDays] = useState<number[]>([]);
   const [instructions, setInstructions] = useState(INSTRUCTIONS_OPTIONS[0]);
   const [startDate, setStartDate] = useState(tomorrowIsoDate());
-  const [phone, setPhone] = useState<string>((user as any)?.phone_number || (user as any)?.username || '');
+  const [mealTimeIds, setMealTimeIds] = useState<number[]>([]);
+  const [whatsappUpdates, setWhatsappUpdates] = useState(true);
 
   const plansQuery = useQuery({
     queryKey: ['subscription-plans'],
@@ -55,34 +70,59 @@ export default function CreateSubscription() {
     [plansQuery.data, planId]
   );
 
+  const mealTimesQuery = useQuery({
+    queryKey: ['subscription-meal-times', plan?.meal_plan_type.id],
+    queryFn: () => subscriptionApi.getMealTimes(plan!.meal_plan_type.id),
+    enabled: Boolean(plan?.meal_plan_type.id),
+  });
+
+  const availableMealTimes = useMemo(() => {
+    const allowed = plan?.meal_plan_type.allowed_meal_time_ids;
+    return (mealTimesQuery.data?.meal_times ?? []).filter((mealTime) => {
+      if (mealTime.is_active === false || mealTime.available_for_subscription === false) return false;
+      return !allowed?.length || allowed.includes(mealTime.id);
+    });
+  }, [mealTimesQuery.data, plan]);
+
+  const maxMealTimes =
+    mealTimesQuery.data?.max_meal_times_selectable ??
+    plan?.meal_plan_type.max_meal_times_selectable ??
+    availableMealTimes.length;
+
+  useEffect(() => {
+    if (!availableMealTimes.length) {
+      setMealTimeIds([]);
+      return;
+    }
+    const allowedCount = maxMealTimes > 0 ? maxMealTimes : availableMealTimes.length;
+    const availableIds = new Set(availableMealTimes.map((mealTime) => mealTime.id));
+    setMealTimeIds((current) => {
+      const retained = current.filter((id) => availableIds.has(id)).slice(0, allowedCount);
+      return retained.length ? retained : availableMealTimes.slice(0, allowedCount).map((mealTime) => mealTime.id);
+    });
+  }, [availableMealTimes, maxMealTimes]);
+
   const defaultAddress = useMemo(() => {
     const list = addressesQuery.data ?? [];
     return list.find((a) => a.is_default) ?? list[0];
   }, [addressesQuery.data]);
 
-  const checkoutMutation = useMutation({
-    mutationFn: subscriptionApi.checkout,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
-      Alert.alert(
-        'Subscription created',
-        'Your subscription is set up. You can manage deliveries from the subscriptions screen.',
-        [{ text: 'View subscriptions', onPress: () => router.replace('/subscription' as any) }]
-      );
-    },
-    onError: (e: any) => {
-      Alert.alert(
-        'Could not start subscription',
-        e?.response?.data?.error || e?.message || 'Please try again.'
-      );
-    },
-  });
-
   const toggleDay = (i: number) => {
     setVegDays((prev) => (prev.includes(i) ? prev.filter((d) => d !== i) : [...prev, i]));
   };
 
-  const handleSubmit = () => {
+  const toggleMealTime = (id: number) => {
+    setMealTimeIds((current) => {
+      if (current.includes(id)) return current.filter((mealTimeId) => mealTimeId !== id);
+      if (maxMealTimes > 0 && current.length >= maxMealTimes) {
+        Alert.alert('Meal slot limit', `This plan allows up to ${maxMealTimes} meal slots.`);
+        return current;
+      }
+      return [...current, id];
+    });
+  };
+
+  const handleSubmit = async () => {
     if (!plan) {
       Alert.alert('Select a plan', 'Please return to plans and pick one.');
       return;
@@ -109,18 +149,65 @@ export default function CreateSubscription() {
       );
       return;
     }
-    if (!phone.trim()) {
-      Alert.alert('Phone required', 'Enter the number for delivery updates.');
+    if (!isValidIsoDate(startDate)) {
+      Alert.alert('Invalid start date', 'Enter the start date in YYYY-MM-DD format.');
+      return;
+    }
+    if (startDate < tomorrowIsoDate()) {
+      Alert.alert('Invalid start date', 'Choose tomorrow or a later date.');
+      return;
+    }
+    if (!mealTimeIds.length) {
+      Alert.alert('Choose a meal slot', 'Select at least one delivery meal slot.');
+      return;
+    }
+    const email = user?.email?.trim();
+    if (!email || !email.includes('@')) {
+      Alert.alert('Email required', 'Add a valid email to your profile before paying.');
       return;
     }
 
-    // Real creation goes through checkout (subscription_id = plan id + address).
-    // Preferences (start date, veg days, instructions) are applied via the manage
-    // settings endpoint after the subscription exists — see crossCutting notes.
-    checkoutMutation.mutate({
-      subscription_id: plan.id,
-      address_id: defaultAddress.id,
+    const result = await pay({
+      kind: 'subscription',
+      order: {
+        currency: 'INR',
+        address_id: defaultAddress.id,
+        email,
+        notes: { source: 'mobile_app', subscription_plan_id: plan.id },
+        subscription: {
+          meal_plan_type_id: plan.meal_plan_type.id,
+          subscription_period_id: plan.subscription_period.id,
+          category_id: plan.category?.id ?? null,
+          meal_time_ids: mealTimeIds,
+          start_date: startDate,
+          veg_days: vegDays,
+          reminder_days_before: 2,
+          delivery_instructions: instructions,
+          whatsapp_updates: whatsappUpdates,
+        },
+      },
+      fulfillment: {
+        address_id: defaultAddress.id,
+        delivery_date: startDate,
+        delivery_instructions: instructions,
+        whatsapp_updates: whatsappUpdates,
+        reminder_days_before: 2,
+        email,
+      },
     });
+
+    if (result.status === 'cancelled') return;
+    if (result.status === 'failed') {
+      Alert.alert('Could not start subscription', paymentErrorMessage(result.error));
+      return;
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+    Alert.alert(
+      'Subscription created',
+      'Payment was confirmed and your subscription is ready to manage.',
+      [{ text: 'View subscriptions', onPress: () => router.replace('/subscription' as any) }]
+    );
   };
 
   const loading = plansQuery.isLoading || addressesQuery.isLoading;
@@ -155,7 +242,11 @@ export default function CreateSubscription() {
               <Text style={styles.summaryTitle}>
                 {plan.name || plan.meal_plan_type?.name || 'Plan'}
               </Text>
-              <Text style={styles.summaryPrice}>₹{Number(plan.price).toFixed(0)}</Text>
+              <Text style={styles.summaryPrice}>
+                {mealTimeIds.length
+                  ? `₹${(Number(plan.price) * mealTimeIds.length).toFixed(0)} total`
+                  : `₹${Number(plan.price).toFixed(0)} per meal slot`}
+              </Text>
             </View>
 
             {defaultAddress ? (
@@ -189,15 +280,38 @@ export default function CreateSubscription() {
               placeholderTextColor={colors.text.muted}
             />
 
-            <Text style={[styles.sectionTitle, { marginTop: spacing.xxl }]}>Phone</Text>
-            <TextInput
-              style={styles.input}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="+91 9876543210"
-              placeholderTextColor={colors.text.muted}
-              keyboardType="phone-pad"
-            />
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xxl }]}>Meal slots</Text>
+            <Text style={styles.sectionDesc}>
+              Select at least one{maxMealTimes > 0 ? ` (up to ${maxMealTimes})` : ''}. The price is per selected slot.
+            </Text>
+            {mealTimesQuery.isLoading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : availableMealTimes.length ? (
+              availableMealTimes.map((mealTime) => {
+                const selected = mealTimeIds.includes(mealTime.id);
+                return (
+                  <TouchableOpacity
+                    key={mealTime.id}
+                    style={[styles.optionRow, selected && styles.optionRowActive]}
+                    onPress={() => toggleMealTime(mealTime.id)}
+                  >
+                    <Ionicons
+                      name={selected ? 'checkbox' : 'square-outline'}
+                      size={20}
+                      color={selected ? colors.primary : colors.text.disabled}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.optionText}>{mealTime.name}</Text>
+                      {mealTime.delivery_window ? (
+                        <Text style={styles.mealTimeWindow}>{mealTime.delivery_window}</Text>
+                      ) : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <Text style={styles.errorText}>No subscription meal slots are available for this plan.</Text>
+            )}
 
             <Text style={[styles.sectionTitle, { marginTop: spacing.xxl }]}>Veg-only days</Text>
             <Text style={styles.sectionDesc}>Days when you want only vegetarian meals</Text>
@@ -229,8 +343,21 @@ export default function CreateSubscription() {
               </TouchableOpacity>
             ))}
 
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.optionText}>WhatsApp updates</Text>
+                <Text style={styles.mealTimeWindow}>Receive delivery and plan reminders</Text>
+              </View>
+              <Switch
+                value={whatsappUpdates}
+                onValueChange={setWhatsappUpdates}
+                trackColor={{ false: colors.border, true: colors.primaryLight }}
+                thumbColor={whatsappUpdates ? colors.primary : colors.text.disabled}
+              />
+            </View>
+
             <Text style={styles.paymentNote}>
-              Payment for subscriptions is processed separately — our team will reach out shortly after you subscribe.
+              Your subscription is created only after Razorpay confirms payment. You will not be charged if you cancel the payment sheet.
             </Text>
           </>
         )}
@@ -238,10 +365,10 @@ export default function CreateSubscription() {
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.md }]}>
         <Button
-          title={checkoutMutation.isPending ? 'Starting…' : 'Start Subscription'}
+          title={paying ? 'Opening payment…' : 'Pay & Start Subscription'}
           onPress={handleSubmit}
-          loading={checkoutMutation.isPending}
-          disabled={!plan || checkoutMutation.isPending}
+          loading={paying}
+          disabled={!plan || paying || mealTimesQuery.isLoading}
           fullWidth
           size="lg"
         />
@@ -324,6 +451,14 @@ const styles = StyleSheet.create({
   },
   optionRowActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
   optionText: { ...typography.body.lg, color: colors.text.primary },
+  mealTimeWindow: { ...typography.body.sm, color: colors.text.secondary, marginTop: 2 },
+  errorText: { ...typography.body.md, color: colors.status.error, marginBottom: spacing.lg },
+  switchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingVertical: spacing.lg, paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+    marginTop: spacing.md, borderWidth: 1, borderColor: colors.border,
+  },
 
   paymentNote: {
     ...typography.body.sm,
@@ -338,3 +473,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingTop: spacing.lg,
   },
 });
+
+function paymentErrorMessage(error: string): string {
+  const messages: Record<string, string> = {
+    payment_sdk_missing: 'Payments require a HealthyOme development or store build, not Expo Go.',
+    payments_disabled: 'Online payments are temporarily unavailable.',
+    subscription_invalid: 'This subscription configuration is no longer available. Refresh and try again.',
+    subscription_plan_not_found: 'This subscription plan is no longer available.',
+    meal_times_required: 'Select at least one meal slot.',
+    invalid_meal_time_ids: 'One of the selected meal slots is no longer available.',
+    too_many_meal_times: 'Too many meal slots were selected for this plan.',
+    kitchen_closed_start_date: 'Choose another start date because the kitchen is closed on that day.',
+    delivery_area_unavailable: 'The selected address is outside the current delivery area.',
+    amount_mismatch: 'The plan price changed. Refresh and try again.',
+  };
+  return messages[error] ?? error.replaceAll('_', ' ');
+}

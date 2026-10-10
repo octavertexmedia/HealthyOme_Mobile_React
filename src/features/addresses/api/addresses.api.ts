@@ -1,29 +1,33 @@
 import apiClient from '../../../shared/api/client';
-
-export interface DeliveryArea {
-  id: number;
-  name: string;
-}
+import type { DeliveryArea } from '../../delivery-areas/api/deliveryAreas.api';
 
 export interface UserAddress {
   id: number;
   label?: string;
   address: string;
+  address_line1?: string;
+  address_line2?: string;
+  pincode?: string;
   landmark?: string;
   contact_number?: string;
   delivery_area?: DeliveryArea | null;
   is_default?: boolean;
+  default_meal_time_ids?: number[];
   created_at?: string;
   updated_at?: string;
 }
 
 export interface CreateAddressPayload {
   label?: string;
-  address: string;
+  address?: string;
+  address_line1?: string;
+  address_line2?: string;
+  pincode?: string;
   landmark?: string;
   contact_number?: string;
   delivery_area_id?: number | null;
   is_default?: boolean;
+  default_meal_time_ids?: number[];
 }
 
 export const addressesApi = {

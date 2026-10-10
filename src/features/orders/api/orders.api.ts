@@ -13,6 +13,8 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export interface OrderSummary {
   id: number;
   order_type: string;
+  meal_item_id?: number | null;
+  snack_item_id?: number | null;
   meal_name: string;
   meal_image: string;
   order_date: string;
@@ -42,6 +44,8 @@ export interface OrderTracking {
   id: number;
   status: OrderStatus;
   status_display: string;
+  order_type: string;
+  cancellable: boolean;
   steps: TrackStep[];
   meal_name: string;
   delivery_date: string;
@@ -69,6 +73,15 @@ export const ordersApi = {
     return response.data;
   },
 
+  reorderOrder: async (id: number): Promise<{
+    status: string;
+    message: string;
+    cart?: { total_items: number; total_price: number };
+  }> => {
+    const response = await apiClient.post(`/orders/${id}/reorder/`);
+    return response.data;
+  },
+
   placeOrder: async (data: {
     address_id?: number;
     address?: string;
@@ -77,7 +90,7 @@ export const ordersApi = {
     notes?: string;
     coupon_code?: string;
     delivery_instructions?: string;
-    items: Array<{ meal_item_id: number; quantity: number }>;
+    items: { meal_item_id: number; quantity: number }[];
   }): Promise<{
     success: boolean;
     message: string;

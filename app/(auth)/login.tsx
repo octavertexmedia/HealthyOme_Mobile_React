@@ -3,17 +3,20 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView,
   Platform, Alert, ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { authApi } from '../../src/features/auth/api/auth.api';
 import { colors, spacing, borderRadius, typography } from '../../src/shared/theme';
 import Button from '../../src/shared/components/Button';
+import { safeAuthRedirect } from '../../src/features/auth/authRedirect';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ redirect?: string | string[] }>();
   const insets = useSafeAreaInsets();
+  const redirect = safeAuthRedirect(params.redirect);
   const [mode, setMode] = useState<'phone' | 'email'>('phone');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -37,10 +40,16 @@ export default function LoginScreen() {
       if (mode === 'phone') {
         const phoneNum = phone.startsWith('+91') ? phone : `+91${phone}`;
         await authApi.sendOTP(phoneNum);
-        router.push({ pathname: '/(auth)/verify', params: { phone: phoneNum, mode: 'phone' } });
+        router.push({
+          pathname: '/(auth)/verify',
+          params: { phone: phoneNum, mode: 'phone', ...(redirect ? { redirect } : {}) },
+        });
       } else {
         await authApi.sendEmailOTP(email);
-        router.push({ pathname: '/(auth)/verify', params: { email, mode: 'email' } });
+        router.push({
+          pathname: '/(auth)/verify',
+          params: { email, mode: 'email', ...(redirect ? { redirect } : {}) },
+        });
       }
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.error || 'Failed to send OTP. Please try again.');
@@ -137,9 +146,21 @@ export default function LoginScreen() {
 
           <Text style={styles.terms}>
             By continuing, you agree to our{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text>
+            <Text
+              style={styles.termsLink}
+              accessibilityRole="link"
+              onPress={() => router.push('/profile-pages/terms?slug=terms' as any)}
+            >
+              Terms of Service
+            </Text>
             {' '}and{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>
+            <Text
+              style={styles.termsLink}
+              accessibilityRole="link"
+              onPress={() => router.push('/profile-pages/terms?slug=privacy' as any)}
+            >
+              Privacy Policy
+            </Text>
           </Text>
         </ScrollView>
       </LinearGradient>

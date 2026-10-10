@@ -30,7 +30,7 @@ export default function ProfileScreen() {
   };
 
   const sections = [
-    {
+    ...(isAuthenticated ? [{
       title: "Orders",
       items: [
         { label: "All Subscriptions", icon: "cube-outline", route: "/subscription" },
@@ -52,7 +52,7 @@ export default function ProfileScreen() {
         { label: "Payment Modes", icon: "card-outline", route: "/profile-pages/payment" },
         { label: "Offers", icon: "pricetag-outline", route: "/profile-pages/offers" },
       ],
-    },
+    }] : []),
     {
       title: "Support",
       items: [
@@ -63,9 +63,18 @@ export default function ProfileScreen() {
     {
       title: "Account",
       items: [
-        { label: "Notification preferences", icon: "notifications-outline", route: "/profile-pages/notifications" },
-        { label: "Terms & Privacy", icon: "lock-closed-outline", route: "/profile-pages/terms" },
-        { label: "Logout", icon: "log-out-outline", route: "LOGOUT", isDanger: true },
+        ...(isAuthenticated
+          ? [
+            { label: "Notifications", icon: "notifications-outline", route: "/profile-pages/notifications" },
+            { label: "Notification Preferences", icon: "options-outline", route: "/profile-pages/preferences" },
+          ]
+          : []),
+        { label: "Terms of Service", icon: "document-text-outline", route: "/profile-pages/terms?slug=terms" },
+        { label: "Privacy Policy", icon: "shield-checkmark-outline", route: "/profile-pages/terms?slug=privacy" },
+        { label: "Data Deletion", icon: "trash-outline", route: "/profile-pages/data-deletion" },
+        isAuthenticated
+          ? { label: "Logout", icon: "log-out-outline", route: "LOGOUT", isDanger: true }
+          : { label: "Sign In", icon: "log-in-outline", route: "/(auth)/login" },
       ],
     },
   ];

@@ -1,53 +1,117 @@
-# Native dev build — live Razorpay card payments
+# Native development builds
 
-The app runs in **Expo Go** for day-to-day JS work, but Razorpay is a **native module**
-(`react-native-razorpay`) that Expo Go cannot load. Card/UPI payment therefore returns
-`payment_sdk_missing` in Expo Go (checkout shows "online payment needs the latest app
-build"). The **zero-rupee / 100%-coupon** path and **Cash-on-nothing** cases work without
-the SDK. To exercise real payments you need a **development build** (dev client).
+Build the existing native projects directly with Gradle and Xcode. These builds
+do not require an Expo account, Expo Go, EAS, or a cloud build service. The app
+currently includes Expo libraries and Expo Router as source dependencies;
+removing those libraries would be a separate React Native migration.
 
-No app code changes are needed — `usePayment` already loads the SDK when present and falls
-back gracefully when it isn't.
+Razorpay and Sentry use native modules. Validate those integrations with a native
+development build, never with a production payment account during routine
+development.
 
-## What's already set up
-- `react-native-razorpay@^3` is in `package.json`.
-- `usePayment` (`src/features/payments/hooks/usePayment.ts`) drives:
-  `create-order → Razorpay SDK → verify` (and `complete-zero-order` for ₹0).
-- `eas.json` has `development` (iOS **simulator**) and `development-device` (real device) profiles.
-- App config (`app.json`) is CNG/managed; a prebuild will generate `ios/` + `android/`.
+## What is configured
 
-## Option A — local build (fastest to iterate)
+- `react-native-razorpay` is a locked dependency.
+- `usePayment` drives the backend-authoritative
+  `create-order -> Razorpay SDK -> verify` flow, including the separate
+  zero-rupee completion endpoint.
+- Expo Notifications and Sentry native modules are part of the existing projects.
+- `ios/` and `android/` are generated and ignored. The commands below require
+  those local projects and the already installed native dependencies; a clean
+  clone does not contain them.
+
+## Local build
+
+From the repository root, with the Android SDK, JDK, Xcode, JavaScript
+dependencies, and CocoaPods dependencies already installed:
+
 ```bash
-cd mobile
-npx expo prebuild                 # generates ios/ + android/ from app.json (one time)
-npx expo run:ios                  # builds the dev client + installs on the booted simulator
-# then: npx expo start --dev-client   (Metro serves JS into the dev build)
-```
-> `react-native-razorpay` needs iOS deployment target ≥ 12 and CocoaPods; `expo prebuild`
-> + `pod install` (run automatically by `run:ios`) handle linking.
-> Razorpay's checkout UI works in the simulator for the flow, but **use a real device with
-> test keys for a true end-to-end charge**.
+cd android
+SENTRY_DISABLE_AUTO_UPLOAD=true ./gradlew assembleDebug
+cd ..
 
-## Option B — EAS cloud build (no local Xcode needed)
+SENTRY_DISABLE_AUTO_UPLOAD=true xcodebuild \
+  -workspace ios/HealthyOMe.xcworkspace \
+  -scheme HealthyOMe \
+  -configuration Debug \
+  -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/healthyome-ios-derived \
+  CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES ARCHS=arm64 \
+  build
+```
+
+The Android output is `android/app/build/outputs/apk/debug/app-debug.apk`.
+The iOS output is
+`/tmp/healthyome-ios-derived/Build/Products/Debug-iphonesimulator/HealthyOMe.app`.
+The iOS app is an unsigned arm64 simulator artifact; it cannot be installed on a
+physical iPhone.
+
+Debug builds skip JavaScript bundling and normally load JavaScript from a local
+development server. Compiling these artifacts therefore verifies native
+integration, but does not establish standalone startup or end-to-end behavior.
+No JavaScript development server, Expo CLI, or cloud service is started by the
+commands above. A self-contained release build and physical iPhone installation
+require separate bundling and Apple signing setup.
+
+A real device and backend test-mode credentials are required for payment-method
+UI and push-delivery validation.
+
+## Standalone Android test APK
+
+The follow-up delivery adds `scripts/bundle-native.cjs`, which invokes the
+installed Metro library directly to generate a production-mode JavaScript
+bundle and copy the native assets. It does not start a development server or
+invoke Expo CLI. It uses the repository's existing Metro configuration and
+Expo/NativeWind libraries; it does not remove them.
+
 ```bash
-cd mobile
-eas login
-eas build --profile development --platform ios     # simulator .app (see eas.json)
-# or a real device:
-eas build --profile development-device --platform ios
-# install the artifact, then:
-npx expo start --dev-client
+node scripts/bundle-native.cjs android
+cd android
+NODE_ENV=production SENTRY_DISABLE_AUTO_UPLOAD=true ./gradlew :app:assembleDebug \
+  --offline --init-script ../scripts/standalone-android.init.gradle
 ```
 
-## Razorpay keys
-- The **key id** comes from the backend: `GET /api/shop/payments/razorpay/public-key/`
-  (`usePayment` fetches it; nothing to hardcode in the app).
-- Backend test keys live in `web/docs/RAZORPAY_TEST_KEYS.md`.
+Preflight the Gradle distribution/cache, SDK 36, NDK 27.1.12297006, JDK 17,
+JavaScript dependencies, and generated native project before running. The audit
+machine used the already downloaded Gradle 9.0.0 distribution and its existing
+`/tmp/healthyome-gradle-home` cache, avoiding new dependency downloads.
 
-## Verifying the flow
-1. Add a meal to cart → Checkout → Proceed to Pay.
-2. Razorpay sheet opens (dev build only) → complete with a test method.
-3. App calls `/payments/razorpay/verify/`; on success the order rows are created and the
-   app navigates to `/orders/my/{id}`.
-4. 100%-coupon → `zero_rupee` path settles via `/payments/razorpay/complete-zero-order/`
-   with **no** SDK — testable in Expo Go too.
+`scripts/bundle-native.cjs android` first runs the repository-owned
+`scripts/prepare-standalone-android.cjs`. It locates the generated Kotlin
+application from `app.json`, then idempotently adds this argument to
+`ExpoReactHostFactory.getDefaultReactHost` so a bundled Debug test artifact
+loads its bundled JavaScript:
+
+```kotlin
+useDevSupport = BuildConfig.DEBUG && !assets.list("").orEmpty().contains("index.android.bundle"),
+```
+
+The preparation script can also be run separately with
+`node scripts/prepare-standalone-android.cjs`. It refuses missing projects,
+unsupported templates and conflicting custom settings rather than overwriting
+them; it does not install software or generate a native project. Four fixture
+tests (`node --test scripts/prepare-standalone-android.test.cjs`) cover fresh
+templates, idempotence, conflicting templates/settings and CRLF preservation.
+The actual generated project is still ignored. A fresh-clone generation and
+build has not been verified; reproducible hook application is not a claim of
+clean-clone build readiness.
+
+The init script adds only the generated test bundle/assets to the Debug source
+set. It retains the existing Android Debug signing key and application ID; it
+is not a Play Store release and cannot replace an installation signed with a
+different key. `HealthyOMe-standalone-test.apk` is delivered separately from the
+original server-dependent `HealthyOMe-debug.apk`.
+
+For local Android Emulator and iOS Simulator Maestro smoke tests, see
+`docs/QUALITY_AND_CLOUD_TESTING.md`. No cloud workflow or paid service is used.
+
+## Payment safety
+
+- The Razorpay public key ID comes from the backend; no payment secret belongs
+  in the mobile repository.
+- Use only a non-production backend and Razorpay test mode for payment testing.
+- A successful verification can create server-side order records. Do not run it
+  without an approved disposable test account and explicit authorization.
+- Cancellation and zero-charge behavior should be exercised before any
+  test-mode payment completion.

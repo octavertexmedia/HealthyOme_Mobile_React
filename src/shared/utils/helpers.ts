@@ -1,3 +1,5 @@
+import { env } from '../config/env';
+
 export const formatPrice = (price: number | string | null | undefined): string => {
   if (price === null || price === undefined) return '₹0';
   const num = typeof price === 'string' ? parseFloat(price) : price;
@@ -28,8 +30,6 @@ export const truncateText = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
 };
-
-import { env } from '../config/env';
 
 export const getImageUrl = (path: string | null | undefined): string | undefined => {
   if (!path) return undefined;

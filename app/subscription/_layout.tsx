@@ -8,6 +8,8 @@ export default function SubscriptionLayout() {
       <Stack.Screen name="plans" />
       <Stack.Screen name="create" />
       <Stack.Screen name="active" />
+      <Stack.Screen name="manage/[id]" />
+      <Stack.Screen name="recharge/[id]" />
     </Stack>
   );
 }

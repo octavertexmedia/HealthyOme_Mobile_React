@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import apiClient from '../../shared/api/client';
+import { androidFcmToken } from './pushToken';
 
 let registering: Promise<boolean> | null = null;
 let rotationSub: ReturnType<typeof Notifications.addPushTokenListener> | null = null;
@@ -10,7 +11,7 @@ let rotationSub: ReturnType<typeof Notifications.addPushTokenListener> | null = 
 // (the backend keys de-registration on fcm_token, not device_id).
 let lastToken: string | null = null;
 
-const ANDROID_CHANNELS: Array<{ id: string; name: string }> = [
+const ANDROID_CHANNELS: { id: string; name: string }[] = [
   { id: 'orders',        name: 'Order updates' },
   { id: 'promotions',    name: 'Promotions & offers' },
   { id: 'subscriptions', name: 'Subscription reminders' },
@@ -33,7 +34,7 @@ async function postRegistration(token: string): Promise<boolean> {
     await apiClient.post('/notifications/device/', {
       fcm_token: token,
       device_id: deviceId(),
-      device_type: Platform.OS === 'ios' ? 'ios' : 'android',
+      device_type: 'android',
       device_name: Device.deviceName ?? '',
       app_version: Constants.expoConfig?.version ?? '',
     });
@@ -45,8 +46,13 @@ async function postRegistration(token: string): Promise<boolean> {
 }
 
 /**
- * Request notification permission, obtain an Expo push token, and register it
- * with the backend. Idempotent — safe to call on every authenticated launch.
+ * Request notification permission, obtain Android's native FCM token, and
+ * register it with the Firebase-backed API. Idempotent — safe to call on every
+ * authenticated launch.
+ *
+ * iOS is intentionally disabled: getDevicePushTokenAsync returns an APNs token
+ * there, while the backend currently sends only through Firebase Admin. Sending
+ * that APNs token as `fcm_token` would create a registration that can never work.
  *
  * Also installs a token-rotation listener once so OS-rotated tokens get
  * re-POSTed automatically. Returns true on success.
@@ -56,6 +62,7 @@ export async function registerPushToken(): Promise<boolean> {
 
   registering = (async () => {
     if (!Device.isDevice) return false;
+    if (Platform.OS !== 'android') return false;
 
     const existing = await Notifications.getPermissionsAsync();
     let granted = existing.granted || existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
@@ -65,35 +72,29 @@ export async function registerPushToken(): Promise<boolean> {
     }
     if (!granted) return false;
 
-    if (Platform.OS === 'android') {
-      for (const channel of ANDROID_CHANNELS) {
-        await Notifications.setNotificationChannelAsync(channel.id, {
-          name: channel.name,
-          importance: Notifications.AndroidImportance.HIGH,
-          sound: 'default',
-          vibrationPattern: [0, 250, 250, 250],
-        });
-      }
+    for (const channel of ANDROID_CHANNELS) {
+      await Notifications.setNotificationChannelAsync(channel.id, {
+        name: channel.name,
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        vibrationPattern: [0, 250, 250, 250],
+      });
     }
-
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      (Constants as any)?.easConfig?.projectId;
-    if (!projectId) return false;
 
     let token: string;
     try {
-      const res = await Notifications.getExpoPushTokenAsync({ projectId });
-      token = res.data;
+      const nativeToken = await Notifications.getDevicePushTokenAsync();
+      const fcmToken = androidFcmToken(Platform.OS, nativeToken);
+      if (!fcmToken) return false;
+      token = fcmToken;
     } catch {
       return false;
     }
 
     if (!rotationSub) {
       rotationSub = Notifications.addPushTokenListener((next) => {
-        if (next?.data) {
-          postRegistration(next.data).catch(() => {});
-        }
+        const nextFcmToken = androidFcmToken(Platform.OS, next);
+        if (nextFcmToken) postRegistration(nextFcmToken).catch(() => {});
       });
     }
 

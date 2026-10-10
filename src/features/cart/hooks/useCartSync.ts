@@ -37,6 +37,7 @@ const toSyncLines = (items: CartItem[]): CartSyncLine[] => {
  */
 export function useCartSync() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const sessionRevision = useAuthStore((s) => s.sessionRevision);
   const synced = useRef(false);
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export function useCartSync() {
     }
     if (synced.current) return;
     synced.current = true;
+    let cancelled = false;
 
     (async () => {
       try {
@@ -57,10 +59,13 @@ export function useCartSync() {
             ? await cartApi.sync(payload)
             : await cartApi.get();
 
-        useCartStore.getState().hydrateFromServer(server);
+        if (!cancelled && useAuthStore.getState().sessionRevision === sessionRevision) {
+          useCartStore.getState().hydrateFromServer(server);
+        }
       } catch {
         synced.current = false; // allow retry on next mount
       }
     })();
-  }, [isAuthenticated]);
+    return () => { cancelled = true; synced.current = false; };
+  }, [isAuthenticated, sessionRevision]);
 }

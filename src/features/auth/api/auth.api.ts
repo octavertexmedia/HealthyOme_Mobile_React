@@ -1,12 +1,7 @@
 import apiClient from '../../../shared/api/client';
+import type { ProfileUpdate, User } from '../types/auth.types';
 
-export interface MobileAuthUser {
-  id: number;
-  username: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  phone_number?: string;
+export interface MobileAuthUser extends User {
   is_new_user?: boolean;
 }
 
@@ -58,13 +53,16 @@ export const authApi = {
     return response.data;
   },
 
-  getProfile: async () => {
-    const response = await apiClient.get('/profile/');
+  getProfile: async (): Promise<MobileAuthUser> => {
+    const response = await apiClient.get<MobileAuthUser>('/profile/');
     return response.data;
   },
 
-  updateProfile: async (data: { first_name?: string; last_name?: string; email?: string }) => {
-    const response = await apiClient.patch('/profile/', data);
-    return response.data;
+  updateProfile: async (data: ProfileUpdate): Promise<User> => {
+    const response = await apiClient.patch<{ success: boolean; user: User }>('/profile/', data);
+    if (!response.data.success || !response.data.user?.id) {
+      throw new Error('The profile update was not confirmed. Please try again.');
+    }
+    return response.data.user;
   },
 };

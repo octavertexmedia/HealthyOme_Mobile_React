@@ -62,13 +62,15 @@ export const useMyBookings = () => {
   });
 };
 
-export const useBookingMealPlan = (id: number | undefined) =>
-  useQuery({
+export const useBookingMealPlan = (id: number | undefined) => {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  return useQuery({
     queryKey: consultKeys.mealPlan(id ?? 0),
     queryFn: () => consultationsApi.getBookingMealPlan(id!),
-    enabled: !!id,
+    enabled: isAuthenticated && !!id,
     staleTime: 5 * 60 * 1000,
   });
+};
 
 export const useCreateBooking = () =>
   useMutation({

@@ -1,7 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import {
   paymentsApi,
   type CreateOrderRequest,
+  type CreateSubscriptionOrderRequest,
+  type CreateSubscriptionRechargeOrderRequest,
   type CreateConsultOrderRequest,
   type CreateFunctionalTrainingOrderRequest,
   type CreateOrderResponse,
@@ -31,6 +34,16 @@ export type PayResult =
 export type PayParams =
   | { kind: 'cart'; order: CreateOrderRequest; fulfillment?: FulfillmentPassthrough }
   | {
+      kind: 'subscription';
+      order: CreateSubscriptionOrderRequest;
+      fulfillment?: FulfillmentPassthrough;
+    }
+  | {
+      kind: 'subscription_recharge';
+      order: CreateSubscriptionRechargeOrderRequest;
+      fulfillment?: FulfillmentPassthrough;
+    }
+  | {
       kind: 'consult';
       order: CreateConsultOrderRequest;
       fulfillment?: FulfillmentPassthrough;
@@ -45,19 +58,27 @@ export type PayParams =
  * usePayment orchestrates: public-key -> create-*-order -> (Razorpay SDK ->
  * verify) OR (complete-zero-order for a ₹0 100%-coupon checkout).
  *
- * Native SDK is a later phase:
- *   npm install react-native-razorpay  (then `npx expo prebuild --clean`)
- *
- * Until it is installed, a CHARGEABLE order returns
+ * Chargeable orders require a native build containing react-native-razorpay.
+ * In Expo Go, a CHARGEABLE order returns
  * { status: 'failed', error: 'payment_sdk_missing' }. The zero-rupee path never
  * touches the SDK, so ₹0 (100%-coupon) checkout still works today.
  */
 export function usePayment() {
   const [loading, setLoading] = useState(false);
+  const paymentInFlight = useRef(false);
 
   const pay = useCallback(async (params: PayParams): Promise<PayResult> => {
+    if (paymentInFlight.current) return { status: 'failed', error: 'payment_in_progress' };
+    paymentInFlight.current = true;
     setLoading(true);
     try {
+      // Expo Go cannot load react-native-razorpay. Fail before creating a
+      // server-side payment transaction so the QR preview is browse-only and
+      // cannot leave orphan payment attempts behind.
+      if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+        return { status: 'failed', error: 'payment_sdk_missing' };
+      }
+
       const init = await createOrderFor(params);
 
       // ₹0 (100% coupon): no charge — settle via complete-zero-order.
@@ -76,6 +97,7 @@ export function usePayment() {
       // `.open` exists — otherwise report payment_sdk_missing (needs a dev build).
       let RazorpayCheckout: any;
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- Expo Go omits this native module.
         RazorpayCheckout = require('react-native-razorpay').default;
       } catch {
         return { status: 'failed', error: 'payment_sdk_missing' };
@@ -122,9 +144,14 @@ export function usePayment() {
       }
     } catch (e: any) {
       const msg =
-        e?.response?.data?.error || e?.message || 'payment_error';
+        e?.response?.data?.code ||
+        e?.response?.data?.error ||
+        e?.response?.data?.message ||
+        e?.message ||
+        'payment_error';
       return { status: 'failed', error: String(msg) };
     } finally {
+      paymentInFlight.current = false;
       setLoading(false);
     }
   }, []);
@@ -134,6 +161,10 @@ export function usePayment() {
 
 function createOrderFor(params: PayParams): Promise<CreateOrderResponse> {
   switch (params.kind) {
+    case 'subscription':
+      return paymentsApi.createSubscriptionOrder(params.order);
+    case 'subscription_recharge':
+      return paymentsApi.createSubscriptionRechargeOrder(params.order);
     case 'consult':
       return paymentsApi.createConsultOrder(params.order);
     case 'functional_training':
@@ -147,6 +178,7 @@ function createOrderFor(params: PayParams): Promise<CreateOrderResponse> {
 function paidResult(
   transactionId: number,
   res: {
+    verified: boolean;
     order_ids: number[];
     subscription_id?: number;
     subscription_recharged?: boolean;
@@ -155,6 +187,8 @@ function paidResult(
   },
   zeroRupee: boolean
 ): PayResult {
+  // Match web checkout: an HTTP 200/SDK callback alone is not fulfillment confirmation.
+  if (res.verified !== true) return { status: 'failed', error: 'payment_verification_unconfirmed' };
   return {
     status: 'paid',
     transaction_id: transactionId,

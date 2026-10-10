@@ -15,7 +15,7 @@ import Button from '../../src/shared/components/Button';
 export default function CartScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { items, totalItems, totalPrice, updateQuantity, removeItem, clearCart } = useCartStore();
+  const { items, totalItems, totalPrice, updateQuantity, clearCart } = useCartStore();
   const { data: quote } = useCheckoutQuote();
 
   // Prefer server-authoritative totals (SiteSettings thresholds + payable_total).

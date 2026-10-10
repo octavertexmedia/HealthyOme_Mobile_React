@@ -43,3 +43,6 @@ yarn-error.*
 # local cache
 .npm/
 Library/
+
+# local build deliverables and validation logs
+/artifacts/

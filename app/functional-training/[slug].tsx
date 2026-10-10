@@ -39,7 +39,7 @@ export default function TrainerDetailScreen() {
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
 
   const trainer = trainerQuery.data;
-  const slots: TimeSlot[] = trainer?.time_slots ?? [];
+  const slots: TimeSlot[] = useMemo(() => trainer?.time_slots ?? [], [trainer?.time_slots]);
   const img = resolveMediaUrl(trainer?.image);
   const busy = createEnrollment.isPending || paying;
 

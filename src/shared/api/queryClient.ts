@@ -12,7 +12,9 @@ export const queryClient = new QueryClient({
       refetchOnMount: true,
     },
     mutations: {
-      retry: 1,
+      // A timeout does not prove that an order/booking/review write failed.
+      // Retrying automatically can duplicate a write without idempotency keys.
+      retry: false,
     },
   },
 });

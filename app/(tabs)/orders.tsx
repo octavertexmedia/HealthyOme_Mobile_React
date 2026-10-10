@@ -1,13 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ordersApi, type OrderSummary, type OrderStatus } from '../../src/features/orders/api/orders.api';
+import { canReorderOrder, isSubscriptionOrder } from '../../src/features/orders/orderPolicies';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
+import { cartApi } from '../../src/features/cart/api/cart.api';
+import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { colors } from '../../src/shared/theme';
 import { formatPrice, formatDate, formatTime } from '../../src/shared/utils/helpers';
 import EmptyState from '../../src/shared/components/EmptyState';
@@ -23,13 +26,12 @@ const STATUS_DISPLAY: Record<OrderStatus, { label: string; color: string; bg: st
   cancelled:  { label: 'Cancelled',  color: '#991B1B', bg: '#FEE2E2' },
 };
 
-const isSubscriptionOrder = (o: OrderSummary) =>
-  /sub/i.test(o.order_type || '');
-
 export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const queryClient = useQueryClient();
+  const hydrateCart = useCartStore((s) => s.hydrateFromServer);
 
   const [activeTab, setActiveTab] = useState<TabType>('quick');
   const [refreshing, setRefreshing] = useState(false);
@@ -41,6 +43,31 @@ export default function OrdersScreen() {
     staleTime: 2 * 60 * 1000,
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: (orderId: number) => ordersApi.reorderOrder(orderId),
+    onSuccess: async (_response, orderId) => {
+      try {
+        const cart = await cartApi.get();
+        hydrateCart(cart);
+        await queryClient.invalidateQueries({ queryKey: ['cart'] });
+        router.push('/cart');
+      } catch {
+        Alert.alert(
+          'Meal added',
+          'The meal was added on the server, but the cart could not be refreshed. Reopen the app before trying again.'
+        );
+      }
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        'Could not reorder',
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          'This meal may no longer be available. Please browse the menu instead.'
+      );
+    },
+  });
+
   const onRefresh = async () => {
     setRefreshing(true);
     await ordersQuery.refetch();
@@ -50,7 +77,9 @@ export default function OrdersScreen() {
   const groupedOrders = useMemo(() => {
     const orders = ordersQuery.data ?? [];
     const filtered = orders.filter((o) =>
-      activeTab === 'subscriptions' ? isSubscriptionOrder(o) : !isSubscriptionOrder(o)
+      activeTab === 'subscriptions'
+        ? isSubscriptionOrder(o.order_type)
+        : !isSubscriptionOrder(o.order_type)
     );
 
     const groups: Record<string, OrderSummary[]> = {};
@@ -157,6 +186,26 @@ export default function OrdersScreen() {
                         <Text style={styles.billText}>
                           Ordered {formatTime(item.created_at)} · Total {formatPrice(item.final_amount || item.total_amount)}
                         </Text>
+                        {canReorderOrder(item) && (
+                          <TouchableOpacity
+                            style={styles.reorderButton}
+                            activeOpacity={0.8}
+                            disabled={reorderMutation.isPending}
+                            onPress={(event) => {
+                              event.stopPropagation();
+                              reorderMutation.mutate(item.id);
+                            }}
+                          >
+                            {reorderMutation.isPending && reorderMutation.variables === item.id ? (
+                              <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                              <>
+                                <Ionicons name="refresh" size={16} color={colors.primary} />
+                                <Text style={styles.reorderText}>Reorder</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </TouchableOpacity>
                   );
@@ -206,4 +255,19 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 12, fontWeight: '600' },
   billText: { fontSize: 14, color: '#6B7280', marginTop: 8 },
+  reorderButton: {
+    alignSelf: 'flex-end',
+    minWidth: 96,
+    minHeight: 36,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  reorderText: { fontSize: 14, fontWeight: '600', color: colors.primary },
 });

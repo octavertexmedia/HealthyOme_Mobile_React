@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.healthyome.app",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow HealthyOme to access your camera for profile photos",
         "NSPhotoLibraryUsageDescription": "Allow HealthyOme to access your photos for profile photos",
@@ -29,7 +30,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "backgroundColor": "#FAFFF8"
       },
-      "package": "com.healthyome.app"
+      "package": "com.healthyome.app",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
@@ -53,7 +55,9 @@
           "imageWidth": 200
         }
       ],
-      "expo-image"
+      "expo-image",
+      "expo-notifications",
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
@@ -61,9 +65,6 @@
     "extra": {
       "router": {
         "origin": false
-      },
-      "eas": {
-        "projectId": "healthyome-mobile"
       },
       "apiUrl": "https://dev.healthyome.com/api/shop",
       "appEnv": "development"

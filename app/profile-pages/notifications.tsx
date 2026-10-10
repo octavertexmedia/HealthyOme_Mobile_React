@@ -20,6 +20,10 @@ import {
   useMarkAllRead,
 } from '../../src/features/notifications/useInbox';
 import type { InAppNotification } from '../../src/features/notifications/inbox.api';
+import {
+  mobileRouteForNotificationPath,
+  routeFromNotificationData,
+} from '../../src/features/notifications/notificationRoutes';
 
 function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
@@ -63,9 +67,10 @@ export default function NotificationsScreen() {
       if (!item.is_read) {
         markRead.mutate(item.id);
       }
-      if (item.link_path) {
-        router.push(item.link_path as any);
-      }
+      const route =
+        mobileRouteForNotificationPath(item.link_path) ||
+        routeFromNotificationData({ ...item.metadata, type: item.event_type });
+      if (route) router.push(route as any);
     },
     [markRead, router]
   );
