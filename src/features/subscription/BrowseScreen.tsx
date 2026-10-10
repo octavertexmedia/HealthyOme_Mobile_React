@@ -15,8 +15,8 @@ export function BrowseScreen({ title, fallback, children }: { title: string; fal
         <Ionicons name="chevron-back" size={26} color="#183829" />
       </TouchableOpacity>
       <Text style={browseStyles.heading}>{title}</Text>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="My subscriptions" onPress={() => router.push('/subscription/my')}>
-        <Ionicons name="person-circle-outline" size={27} color="#183829" />
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="My subscriptions" onPress={() => router.push('/subscription/my')} style={{ minHeight: 44, justifyContent: 'center' }}>
+        <Text style={{ fontSize: 12, color: '#397B30', fontWeight: '600' }}>My plans</Text>
       </TouchableOpacity>
     </View>
     <ScrollView contentContainerStyle={[browseStyles.content, { paddingBottom: insets.bottom + 28 }]}>
