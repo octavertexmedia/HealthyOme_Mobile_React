@@ -42,6 +42,9 @@ function MenuSurface({ visible, onClose, heading, children }: {
   useEffect(() => { if (visible) offset.setValue(0); }, [visible, offset]);
   const pan = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onMoveShouldSetPanResponderCapture: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => offset.stopAnimation(),
     onPanResponderMove: (_, gesture) => offset.setValue(Math.max(0, gesture.dy)),
     onPanResponderRelease: (_, gesture) => {
       if (dismissMenuGesture(gesture.dy, gesture.vy)) onClose();
@@ -53,7 +56,7 @@ function MenuSurface({ visible, onClose, heading, children }: {
     <Pressable testID="menu-backdrop" accessibilityRole="button" accessibilityLabel="Dismiss day-wise menu" onPress={onClose} style={StyleSheet.absoluteFill} />
     <Animated.View testID="day-menu-sheet" accessibilityViewIsModal onAccessibilityEscape={onClose}
       style={[styles.sheet, { height: height * 0.86, maxHeight: Math.max(180, height - insets.top - 24), paddingLeft: insets.left, paddingRight: insets.right, transform: [{ translateY: offset }] }]}>
-      <View testID="menu-drag-handle" {...pan.panHandlers} style={styles.header}>
+      <View testID="menu-drag-handle" collapsable={false} {...pan.panHandlers} style={styles.header}>
         <View style={styles.grabber} />
         <View style={styles.titleRow}>
           <Text ref={heading} accessibilityRole="header" style={styles.title}>Day-wise menu</Text>

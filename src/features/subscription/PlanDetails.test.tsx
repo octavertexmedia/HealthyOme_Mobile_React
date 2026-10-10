@@ -1,7 +1,7 @@
 import React from 'react';
 import { Image } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import PlanDetails from './PlanDetails';
+import PlanDetails, { inlinePlanActions } from './PlanDetails';
 import type { PlanOverview } from './api/subscription.api';
 
 const mockPush = jest.fn(); const mockRefetch = jest.fn();
@@ -23,7 +23,7 @@ beforeEach(() => {
 it('always opens backend dates even when marketing config has a static menu card', () => {
   render(<PlanDetails />);
   expect(screen.UNSAFE_queryAllByType(Image)).toHaveLength(0);
-  expect(screen.getByText('Lunch: Published lunch')).toBeTruthy();
+  expect(screen.getByText('Published lunch')).toBeTruthy();
   expect(screen.getByText('Quick subscribe · ₹239.5')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: 'View day-wise menu schedule' }));
   expect(screen.getByRole('button', { name: 'Close day-wise menu' })).toBeTruthy();
@@ -39,7 +39,7 @@ it('always opens backend dates even when marketing config has a static menu card
 it('opens the day-wise schedule when a plan uses list mode, without inventing a rating', () => {
   mockData.meal_plan_type.available_menu_view = 'list'; render(<PlanDetails />);
   expect(screen.queryByText(/4\.8/)).toBeNull();
-  expect(screen.getByText('Lunch: Published lunch')).toBeTruthy();
+  expect(screen.getByText('Published lunch')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: 'View day-wise menu schedule' }));
   expect(screen.getByRole('button', { name: 'Close day-wise menu' })).toBeTruthy();
   expect(mockPush).not.toHaveBeenCalled();
@@ -57,4 +57,17 @@ it('offers an explicit retry instead of showing an empty successful plan', () =>
   mockError = true; render(<PlanDetails />);
   fireEvent.press(screen.getByText('Retry plan')); expect(mockRefetch).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('button', { name: 'Customize plan' })).toBeDisabled();
+});
+it('keeps actions stacked for narrow screens or enlarged text', () => {
+  expect(inlinePlanActions(402, 1)).toBe(true);
+  expect(inlinePlanActions(320, 1)).toBe(false);
+  expect(inlinePlanActions(402, 1.5)).toBe(false);
+});
+it('removes generic filler while retaining real descriptions and the safety link', () => {
+  const view = render(<PlanDetails />);
+  expect(screen.queryByText('Nutritionist-crafted meals delivered fresh.')).toBeNull();
+  fireEvent.press(screen.getByRole('link', { name: 'Safety info' }));
+  expect(mockPush).toHaveBeenCalledWith('/profile-pages/faqs');
+  mockData.meal_plan_type.description = 'Fresh fruit, prepared daily.';
+  view.rerender(<PlanDetails />); expect(screen.getByText('Fresh fruit, prepared daily.')).toBeTruthy();
 });

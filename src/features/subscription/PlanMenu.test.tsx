@@ -1,4 +1,5 @@
 import React from 'react';
+import { PanResponder, type GestureResponderEvent, type PanResponderGestureState } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import PlanMenuSheet, { dismissMenuGesture } from './PlanMenuSheet';
 import { formatMenuDate } from './menuSchedule';
@@ -74,4 +75,15 @@ it('shows loading instead of stale food and rejects malformed dates', () => {
 it('does not make short or upward movements dismiss the sheet', () => {
   expect(dismissMenuGesture(81, 0)).toBe(true); expect(dismissMenuGesture(20, 1)).toBe(true);
   expect(dismissMenuGesture(10, 2)).toBe(false); expect(dismissMenuGesture(-100, -1)).toBe(false); expect(dismissMenuGesture(40, 0.2)).toBe(false);
+});
+it('captures downward header movement before nested title controls and releases to close', () => {
+  const spy = jest.spyOn(PanResponder, 'create');
+  render(<PlanMenu />);
+  const config = spy.mock.calls[0][0];
+  const event = {} as GestureResponderEvent;
+  expect(config.onMoveShouldSetPanResponderCapture?.(event, { dy: 20, dx: 1 } as PanResponderGestureState)).toBe(true);
+  expect(config.onMoveShouldSetPanResponderCapture?.(event, { dy: 2, dx: 20 } as PanResponderGestureState)).toBe(false);
+  expect(config.onMoveShouldSetPanResponderCapture?.(event, { dy: -20, dx: 0 } as PanResponderGestureState)).toBe(false);
+  config.onPanResponderRelease?.(event, { dy: 100, vy: 0 } as PanResponderGestureState);
+  expect(mockClose).toHaveBeenCalledTimes(1); spy.mockRestore();
 });

@@ -10,6 +10,7 @@ const serial = process.env.HEALTHYOME_ANDROID_SERIAL;
 const output = path.join(project, 'artifacts', 'e2e-guest');
 const steps = [];
 let latestXml = '';
+const menuOnly = process.argv.includes('--menu-only');
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function command(args, binary = false) {
   return execFileSync(adb, ['-s', serial, ...args], { encoding: binary ? undefined : 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 });
@@ -20,9 +21,11 @@ const primary = { brands: 1, header: true, tabs: true };
 const secondaryList = { brands: 0, header: false, tabs: true };
 const detail = { brands: 0, header: false, tabs: false };
 async function inspect(name, expected, chrome = primary) {
-  await wait(3500);
-  command(['shell', 'uiautomator', 'dump', '/sdcard/healthyome-guest-e2e.xml']);
-  const xml = command(['shell', 'cat', '/sdcard/healthyome-guest-e2e.xml']);
+  await wait(8000);
+  const remote = `/sdcard/healthyome-guest-${name}.xml`;
+  const dump = command(['shell', 'uiautomator', 'dump', remote]);
+  if (!dump.includes('dumped to:')) throw new Error(`${name}: no fresh accessibility tree; no retry performed.`);
+  const xml = command(['shell', 'cat', remote]);
   latestXml = xml;
   if (hasText(xml, 'Logout')) throw new Error('Authenticated content detected; no screenshot captured.');
   for (const text of expected) if (!hasText(xml, text)) throw new Error(`${name}: expected public UI text was not found: ${text}`);
@@ -37,7 +40,7 @@ async function inspect(name, expected, chrome = primary) {
   steps.push({ name, passed: true, expected, brandCount: brands, globalHeader, tabs });
 }
 function bounds(label) {
-  const node = latestXml.match(/<node\b[^>]*>/g)?.find((item) => item.includes(`content-desc="${label}"`) || item.includes(`text="${label}"`));
+  const node = latestXml.match(/<node\b[^>]*>/g)?.find((item) => item.includes(`content-desc="${label}"`) || item.includes(`text="${label}"`) || item.includes(`resource-id="${label}"`));
   const match = node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
   if (!match) throw new Error(`Native control not found: ${label}. No retry performed.`);
   const [, x1, y1, x2, y2] = match.map(Number);
@@ -53,12 +56,14 @@ async function main() {
   if (!config.extra.readOnlyPreview) throw new Error('This runner only accepts the read-only preview configuration.');
   if (command(['get-state']).trim() !== 'device') throw new Error('The selected Android device is not ready. No retry performed.');
   fs.mkdirSync(output, { recursive: true });
+  if (!menuOnly) {
   open('/');
   await inspect('home', ['HealthyOme', 'Snacks', 'Training', 'Orders', 'Dietitian']);
   open('snacks');
   await inspect('snacks', ['Healthy Snacks']);
   open('subscription/categories');
   await inspect('subscriptions', ['Subscription Meals', 'Pick a category'], secondaryList);
+  }
   open('subscription/plans/healthy-home-style-lunch-meals');
   await inspect('subscription-detail', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
   tap('View day-wise menu schedule');
@@ -77,8 +82,8 @@ async function main() {
   await inspect('menu-sheet-back', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
   tap('View day-wise menu schedule');
   await inspect('menu-sheet-before-swipe', ['Day-wise menu'], detail);
-  const drag = bounds('Day-wise menu');
-  command(['shell', 'input', 'swipe', String(drag.x), String(drag.y), String(drag.x), String(drag.y + 450), '450']);
+  const drag = bounds('menu-drag-handle');
+  command(['shell', 'input', 'swipe', String(drag.x), String(drag.y), String(drag.x), String(drag.y + 450), '800']);
   await inspect('menu-sheet-swipe', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
   tap('View day-wise menu schedule');
   await inspect('menu-sheet-after-swipe-reopen', ['Day-wise menu'], detail);
@@ -86,6 +91,11 @@ async function main() {
   await inspect('menu-sheet-backdrop', ['Subscription Plans', 'Available menu', 'Customize plan'], detail);
   open('subscription/menu/healthy-home-style-lunch-meals');
   await inspect('date-wise-menu', ['Day-wise menu', 'India time', 'All published dates', 'Lunch'], detail);
+  tap('Close day-wise menu');
+  await inspect('legacy-menu-close', ['Subscription Plans', 'Available menu'], detail);
+  open('subscription/plans/exotic-fruit-salad');
+  await inspect('fruit-plan-compact', ['Exotic Fruit Salad', 'Safety info', 'Plans and prices', 'Customize plan', '₹199'], detail);
+  if (!menuOnly) {
   open('subscription/create?plan=healthy-home-style-lunch-meals');
   await inspect('subscription-customize', ['Customize plan', 'Plan duration', 'Checkout'], detail);
   open('cart');
@@ -100,8 +110,9 @@ async function main() {
   await inspect('dietitian', ['Consult', 'Dietician']);
   open('product-review/snack/8');
   await inspect('review-login-boundary', ['Welcome', 'Phone'], { brands: 1, header: false, tabs: false });
+  }
   open('/');
-  const report = { scope: 'public guest native smoke, not authenticated E2E', sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: project, encoding: 'utf8' }).trim(), installedBinaryProvenance: 'Verify separately against the build report; source HEAD is not APK provenance.', serial, viewport: command(['shell', 'wm', 'size']).trim(), density: command(['shell', 'wm', 'density']).trim(), steps };
+  const report = { scope: menuOnly ? 'public native menu gestures and compact plan details; not full-app E2E' : 'public guest native smoke, not authenticated E2E', sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: project, encoding: 'utf8' }).trim(), installedBinaryProvenance: 'Verify separately against the build report; source HEAD is not APK provenance.', serial, viewport: command(['shell', 'wm', 'size']).trim(), density: command(['shell', 'wm', 'density']).trim(), steps };
   fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));
 }
