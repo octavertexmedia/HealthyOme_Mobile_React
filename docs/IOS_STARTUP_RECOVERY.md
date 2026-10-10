@@ -30,7 +30,12 @@ The shell now also checks resolved router segments: empty/root-index segments me
 startup; `(tabs)` means Home. Startup and unresolved deep links render no top bar,
 tabs, shell brand or inset consumption. The content container remains stable so this
 transition does not remount the navigator. Onboarding and login remain chrome-free.
-The native storyboard already contains only centered artwork and is unchanged.
+The native storyboard contains only centered artwork. Timed cold-launch inspection
+found that its generated asset was still the template placeholder. Run the guarded,
+idempotent `node scripts/prepare-ios-splash.cjs` before Xcode: it replaces only the
+three known template splash PNGs with byte-identical copies of the original HealthyOMe
+logo, and refuses custom/unknown files. Storyboard layout and app icons stay unchanged.
+This asset correction requires one native build; the JS chrome fix itself does not.
 
 Root session restoration must finish before the navigator mounts. Native splash is
 hidden after a JS destination or explicit retry screen commits. Session and onboarding
