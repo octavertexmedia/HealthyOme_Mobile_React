@@ -81,6 +81,7 @@ it('captures downward header movement before nested title controls and releases 
   render(<PlanMenu />);
   const config = spy.mock.calls[0][0];
   const event = {} as GestureResponderEvent;
+  expect(config.onStartShouldSetPanResponderCapture?.(event, {} as PanResponderGestureState)).toBe(true);
   expect(config.onMoveShouldSetPanResponderCapture?.(event, { dy: 20, dx: 1 } as PanResponderGestureState)).toBe(true);
   expect(config.onMoveShouldSetPanResponderCapture?.(event, { dy: 2, dx: 20 } as PanResponderGestureState)).toBe(false);
   expect(config.onMoveShouldSetPanResponderCapture?.(event, { dy: -20, dx: 0 } as PanResponderGestureState)).toBe(false);

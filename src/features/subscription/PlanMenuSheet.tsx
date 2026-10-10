@@ -41,6 +41,10 @@ function MenuSurface({ visible, onClose, heading, children }: {
   const offset = useRef(new Animated.Value(0)).current;
   useEffect(() => { if (visible) offset.setValue(0); }, [visible, offset]);
   const pan = useMemo(() => PanResponder.create({
+    // Claim the dedicated handle immediately; text descendants must not own
+    // the start of a drag. The close button is a sibling outside this region.
+    onStartShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponderCapture: () => true,
     onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
     onMoveShouldSetPanResponderCapture: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
     onPanResponderTerminationRequest: () => false,
@@ -56,12 +60,12 @@ function MenuSurface({ visible, onClose, heading, children }: {
     <Pressable testID="menu-backdrop" accessibilityRole="button" accessibilityLabel="Dismiss day-wise menu" onPress={onClose} style={StyleSheet.absoluteFill} />
     <Animated.View testID="day-menu-sheet" accessibilityViewIsModal onAccessibilityEscape={onClose}
       style={[styles.sheet, { height: height * 0.86, maxHeight: Math.max(180, height - insets.top - 24), paddingLeft: insets.left, paddingRight: insets.right, transform: [{ translateY: offset }] }]}>
-      <View testID="menu-drag-handle" collapsable={false} {...pan.panHandlers} style={styles.header}>
-        <View style={styles.grabber} />
-        <View style={styles.titleRow}>
+      <View style={styles.header}>
+        <View testID="menu-drag-handle" collapsable={false} {...pan.panHandlers}>
+          <View style={styles.grabber} />
           <Text ref={heading} accessibilityRole="header" style={styles.title}>Day-wise menu</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close day-wise menu" onPress={onClose} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
         </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close day-wise menu" onPress={onClose} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
       </View>
       <ScrollView nestedScrollEnabled contentContainerStyle={[styles.body, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>{children}</ScrollView>
     </Animated.View>
@@ -72,8 +76,7 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   header: { paddingHorizontal: 16, paddingTop: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   grabber: { height: 4, width: 40, borderRadius: 2, backgroundColor: '#AFB8AC', alignSelf: 'center' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
-  title: { color: '#183829', fontSize: 19, fontWeight: '700', flex: 1 },
-  close: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, closeText: { fontSize: 30, color: '#4B5563' },
+  title: { color: '#183829', fontSize: 19, lineHeight: 26, fontWeight: '700', paddingTop: 10, paddingBottom: 12, paddingRight: 56 },
+  close: { position: 'absolute', top: 12, right: 16, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, closeText: { fontSize: 30, color: '#4B5563' },
   body: { paddingHorizontal: 16, paddingTop: 12 },
 });
