@@ -58,7 +58,7 @@ async function main() {
   await inspect('cart', ['Cart'], detail);
   open('checkout');
   await inspect('checkout', ['Checkout'], detail);
-  open('(tabs)/profile');
+  open('profile');
   await inspect('profile', ['Your Account', 'Guest'], secondaryList);
   open('functional-training');
   await inspect('training', ['Functional Training']);

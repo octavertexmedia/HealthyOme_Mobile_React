@@ -1,5 +1,14 @@
 import { customerShellPolicy } from './shellPolicy';
 
+it.each([{ segments: [] }, { segments: ['index'] }])('does not confuse root startup segments $segments with Home', ({ segments }) => {
+  expect(customerShellPolicy('/', segments)).toMatchObject({ kind: 'startup', header: false, tabs: false, keyboard: false, contentInsets: false });
+});
+it('fails closed during unresolved deep links but permits the resolved tabs group', () => {
+  expect(customerShellPolicy('/snacks', []).header).toBe(false);
+  expect(customerShellPolicy('/', ['(tabs)'])).toMatchObject({ kind: 'browse', header: true, tabs: true });
+  expect(customerShellPolicy('/', ['(tabs)', 'index'])).toMatchObject({ kind: 'browse', header: true, tabs: true });
+});
+
 it.each(['/', '/(tabs)', '/(tabs)/index', '/(tabs)/snacks', '/snacks/', '/functional-training', '/consult'])('reserves full chrome for exact main browse route %s', (path) => {
   expect(customerShellPolicy(path)).toMatchObject({ kind: 'browse', header: true, tabs: true });
 });

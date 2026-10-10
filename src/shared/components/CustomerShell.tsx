@@ -1,6 +1,6 @@
 import React, { type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { type Href, usePathname, useRouter } from 'expo-router';
+import { type Href, usePathname, useRouter, useSegments } from 'expo-router';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandLockup } from './BrandLockup';
 import { useSiteSettings } from '../../features/catalog/hooks/useMeals';
@@ -23,14 +23,15 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const { width } = useWindowDimensions();
   const router = useRouter();
   const path = usePathname();
-  const chrome = customerShellPolicy(path);
+  const segments = useSegments();
+  const chrome = customerShellPolicy(path, segments);
   const { data: settings } = useSiteSettings();
   const authenticated = useAuthStore((state) => state.isAuthenticated);
   const count = useCartStore((state) => state.totalItems);
   const openLocation = () => authenticated
     ? router.push('/profile-pages/addresses')
     : router.push({ pathname: '/(auth)/login', params: { redirect: '/profile-pages/addresses' } });
-  return <View style={styles.root} testID="customer-shell">
+  return <View style={styles.root} testID={chrome.kind === 'startup' ? 'startup-route-container' : 'customer-shell'}>
     {chrome.header && <View testID="shell-top-safe-area" style={{ paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right, backgroundColor: '#fff' }}>
       <View style={styles.header} testID="customer-top-navigation">
         <Pressable accessibilityRole="button" accessibilityLabel="Select delivery location" onPress={openLocation} style={styles.iconButton} android_ripple={{ color: '#DCEAD6', borderless: true }}>

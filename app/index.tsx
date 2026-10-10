@@ -1,60 +1,31 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { storage } from '../src/shared/storage/mmkv';
-import { BrandLockup } from '../src/shared/components/BrandLockup';
+import { StartupScreen } from '../src/shared/components/StartupScreen';
+import { withStartupDeadline } from '../src/shared/startup';
 
 export default function SplashScreen() {
   const router = useRouter();
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let mounted = true;
+    setFailed(false);
 
     const checkOnboarding = async () => {
-      // Simulate splash screen delay so user can see the logo
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      if (!mounted) return;
-
-      const hasOnboardedStr = await storage.getString('has_onboarded');
+      const hasOnboardedStr = await withStartupDeadline(() => storage.getString('has_onboarded'));
       if (!mounted) return;
 
       if (hasOnboardedStr !== 'true') {
-        router.replace('/onboarding' as any);
+        router.replace('/onboarding');
       } else {
         router.replace('/(tabs)');
       }
     };
 
-    void checkOnboarding().catch(() => { if (mounted) router.replace('/(tabs)'); });
+    void checkOnboarding().catch(() => { if (mounted) setFailed(true); });
     return () => { mounted = false; };
-  }, [router]);
+  }, [router, attempt]);
 
-  return (
-    <View style={styles.container}>
-      <StatusBar style="dark" />
-      <View style={styles.logoContainer}>
-        <BrandLockup />
-      </View>
-    </View>
-  );
+  return <StartupScreen failed={failed} onRetry={() => setAttempt((value) => value + 1)} />;
 }
-
-const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#fff' 
-  },
-  logoContainer: {
-    width: 235,
-    height: 284,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logo: {
-    width: '100%',
-    height: '100%',
-  }
-});

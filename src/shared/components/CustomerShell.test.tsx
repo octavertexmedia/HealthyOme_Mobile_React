@@ -8,8 +8,9 @@ import { ScreenHeader } from './ScreenHeader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 let mockPath = '/';
+let mockSegments: string[] | undefined;
 const mockNavigate = jest.fn(); const mockPush = jest.fn(); const mockBack = jest.fn();
-jest.mock('expo-router', () => ({ usePathname: () => mockPath, useLocalSearchParams: () => ({}), useRouter: () => ({ navigate: mockNavigate, push: mockPush, canGoBack: () => true, back: mockBack }) }));
+jest.mock('expo-router', () => ({ usePathname: () => mockPath, useSegments: () => mockSegments ?? (mockPath === '/' ? ['(tabs)'] : mockPath.split('/').filter(Boolean)), useLocalSearchParams: () => ({}), useRouter: () => ({ navigate: mockNavigate, push: mockPush, canGoBack: () => true, back: mockBack }) }));
 jest.mock('../../features/catalog/hooks/useMeals', () => ({ useSiteSettings: () => ({ data: { home_quick_meals_card_enabled: false, healthy_snacks_enabled: true, functional_training_customer_enabled: true } }) }));
 jest.mock('../../features/cart/store/cart.store', () => ({ useCartStore: (fn: (state: unknown) => unknown) => fn({ totalItems: 2 }) }));
 jest.mock('../../features/auth/store/auth.store', () => ({ useAuthStore: (fn: (state: unknown) => unknown) => fn({ isAuthenticated: false }) }));
@@ -19,6 +20,33 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('react-native-safe-area-context', () => {
   const R = jest.requireActual('react'); const C = R.createContext({ top: 40, bottom: 20, left: 0, right: 0 });
   return { SafeAreaInsetsContext: C, useSafeAreaInsets: () => R.useContext(C) };
+});
+beforeEach(() => { mockSegments = undefined; });
+
+it('never mounts navigation on the root splash, then reveals it for resolved Home without remounting content', () => {
+  mockPath = '/'; mockSegments = [];
+  const onMount = jest.fn();
+  function Route() { React.useEffect(onMount, []); return <Text>Startup content</Text>; }
+  const view = render(<CustomerShell><Route /></CustomerShell>);
+  expect(screen.getByTestId('startup-route-container')).toBeTruthy();
+  expect(screen.queryByTestId('customer-shell')).toBeNull();
+  expect(screen.queryByTestId('customer-top-navigation')).toBeNull();
+  expect(screen.queryByTestId('persistent-bottom-navigation')).toBeNull();
+  mockSegments = ['(tabs)'];
+  view.rerender(<CustomerShell><Route /></CustomerShell>);
+  expect(screen.getByTestId('customer-top-navigation')).toBeTruthy();
+  expect(screen.getByTestId('persistent-bottom-navigation')).toBeTruthy();
+  expect(onMount).toHaveBeenCalledTimes(1);
+});
+
+it('keeps navigation hidden during deep-link resolution and on the resolved login route', () => {
+  mockPath = '/'; mockSegments = [];
+  const view = render(<CustomerShell><Text>Resolving link</Text></CustomerShell>);
+  expect(screen.queryByTestId('customer-top-navigation')).toBeNull();
+  mockPath = '/login'; mockSegments = ['(auth)', 'login'];
+  view.rerender(<CustomerShell><Text>Sign in</Text></CustomerShell>);
+  expect(screen.queryByTestId('customer-top-navigation')).toBeNull();
+  expect(screen.queryByTestId('persistent-bottom-navigation')).toBeNull();
 });
 
 it.each(['/', '/snacks', '/catalog', '/menu', '/training', '/dietitian', '/consult', '/functional-training'])('owns exactly one header and tab bar on main browsing route %s', (path) => {

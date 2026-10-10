@@ -15,10 +15,12 @@ import { useCartSync } from '../src/features/cart/hooks/useCartSync';
 import { initSentry } from '../src/shared/observability/sentry';
 import { env } from '../src/shared/config/env';
 import { CustomerShell } from '../src/shared/components/CustomerShell';
+import { StartupScreen } from '../src/shared/components/StartupScreen';
+import { withStartupDeadline } from '../src/shared/startup';
 
 initSentry();
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
   const router = useRouter();
@@ -26,6 +28,8 @@ export default function RootLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const pushEnabled = useAuthStore((s) => s.user?.notify_push !== false);
   const [ready, setReady] = useState(false);
+  const [startupFailed, setStartupFailed] = useState(false);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   usePushDeepLink();
   useCartSync();
 
@@ -38,20 +42,26 @@ export default function RootLayout() {
 
   useEffect(() => {
     let mounted = true;
+    setStartupFailed(false);
     (async () => {
       try {
-        if (!env.readOnlyPreview) await restoreSession();
-      } finally {
-        if (mounted) {
-          setReady(true);
-          await SplashScreen.hideAsync();
-        }
+        await withStartupDeadline(async () => {
+          if (!env.readOnlyPreview) await restoreSession();
+        });
+        if (mounted) setReady(true);
+      } catch {
+        if (mounted) setStartupFailed(true);
       }
     })();
     return () => {
       mounted = false;
     };
-  }, [restoreSession]);
+  }, [restoreSession, startupAttempt]);
+
+  // Hide the native launch view only after the JS route or retry screen commits.
+  useEffect(() => {
+    if (ready || startupFailed) void SplashScreen.hideAsync().catch(() => {});
+  }, [ready, startupFailed]);
 
   useEffect(() => {
     if (env.readOnlyPreview) return;
@@ -62,7 +72,7 @@ export default function RootLayout() {
     }
   }, [isAuthenticated, pushEnabled]);
 
-  if (!ready) return null;
+  if (!ready) return <StartupScreen failed={startupFailed} onRetry={() => setStartupAttempt((value) => value + 1)} />;
 
   return (
     <QueryProvider>
