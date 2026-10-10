@@ -34,7 +34,10 @@ The native storyboard contains only centered artwork. Timed cold-launch inspecti
 found that its generated asset was still the template placeholder. Run the guarded,
 idempotent `node scripts/prepare-ios-splash.cjs` before Xcode: it replaces only the
 three known template splash PNGs with byte-identical copies of the original HealthyOMe
-logo, and refuses custom/unknown files. Storyboard layout and app icons stay unchanged.
+logo, and refuses custom/unknown files. App icons stay unchanged. Timed verification
+found that the storyboard relied on the template PNG's intrinsic size; the original
+4000-pixel image therefore needed explicit bounds. The helper now also constrains
+the centered aspect-fit image view to 200×200 points without changing image pixels.
 This asset correction requires one native build; the JS chrome fix itself does not.
 
 Root session restoration must finish before the navigator mounts. Native splash is
