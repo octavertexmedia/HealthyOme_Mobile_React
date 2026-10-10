@@ -1,4 +1,5 @@
 const ALLOWED_PREFIXES = [
+  '/meal',
   '/checkout',
   '/cart',
   '/orders',

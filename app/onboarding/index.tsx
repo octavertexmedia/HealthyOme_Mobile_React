@@ -126,6 +126,7 @@ const styles = StyleSheet.create({
   slide: {
     flex: 1,
     alignItems: 'center',
+    overflow: 'hidden',
   },
   imageWrapper: {
     width: width,

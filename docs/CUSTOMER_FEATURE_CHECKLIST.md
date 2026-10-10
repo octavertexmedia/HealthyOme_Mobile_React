@@ -2,11 +2,15 @@
 
 This is a source-level inventory, not a claim of completed device acceptance.
 The earlier native builds passed; the follow-up customer changes pass lint,
-TypeScript, and 91 unit/contract/UI tests, plus four native-hook fixture tests.
-The prior standalone Android test APK installed
+TypeScript, and 101 unit/contract/UI tests, plus eight native-tool fixture tests.
+The standalone Android test APK installed
 on an API 34 emulator and displayed its onboarding screen without a development
 server. This is a startup smoke check, not full customer acceptance. No
 authenticated transactional flow has been exercised against a live backend.
+
+See `CUSTOMER_JOURNEY_GAPS.md` for paired web/mobile journey evidence and the
+next acceptance milestone. Current development catalogue data is empty; startup
+and route presence do not establish a complete shopping journey.
 
 Mobile branch: `codex/mobile-parity-fixes`.
 HEAD: `fffaba160e6036589535b73c3f161246cd387b9d`.
@@ -65,8 +69,10 @@ and marketing-only web pages are outside this mobile customer scope.
 5. Resolve the earlier dependency-audit baseline (66 transitive findings),
    repeat accessibility/device-size/network-error testing, verify store build
    numbers/signing, and review release environment/logging/privacy settings.
-   No forced dependency upgrade, paid service, CI artifact upload, release,
-   merge, push or deployment was performed.
+   No forced dependency upgrade, paid service, CI artifact upload, merge or
+   production deployment was performed. Authorized branch pushes and the draft
+   test-artifact checkpoint are recorded separately in the delivery report;
+   neither establishes full customer acceptance or production readiness.
 
 The repository still depends on Expo libraries and Expo Router. A full removal
 is a separate migration; no Expo CLI, Expo Go, EAS or QR preview is used in this

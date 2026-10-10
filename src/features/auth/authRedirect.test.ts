@@ -4,6 +4,7 @@ describe('safeAuthRedirect', () => {
   it('preserves allowlisted customer routes and query parameters', () => {
     expect(safeAuthRedirect('/checkout?coupon=SAVE20')).toBe('/checkout?coupon=SAVE20');
     expect(safeAuthRedirect('/subscription/manage/12')).toBe('/subscription/manage/12');
+    expect(safeAuthRedirect('/meal/42')).toBe('/meal/42');
   });
 
   it('rejects external, protocol-relative, traversal, and staff routes', () => {
@@ -11,5 +12,6 @@ describe('safeAuthRedirect', () => {
     expect(safeAuthRedirect('//example.com')).toBeNull();
     expect(safeAuthRedirect('/checkout/../admin')).toBeNull();
     expect(safeAuthRedirect('/admin')).toBeNull();
+    expect(safeAuthRedirect('/meal/../admin')).toBeNull();
   });
 });

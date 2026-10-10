@@ -30,22 +30,27 @@ cd android
 SENTRY_DISABLE_AUTO_UPLOAD=true ./gradlew assembleDebug
 cd ..
 
-SENTRY_DISABLE_AUTO_UPLOAD=true xcodebuild \
+SENTRY_DISABLE_AUTO_UPLOAD=true RCT_NO_LAUNCH_PACKAGER=1 SKIP_BUNDLING=1 xcodebuild \
   -workspace ios/HealthyOMe.xcworkspace \
   -scheme HealthyOMe \
   -configuration Debug \
   -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/healthyome-ios-derived \
-  CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES ARCHS=arm64 \
+  -disableAutomaticPackageResolution \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- ONLY_ACTIVE_ARCH=YES ARCHS=arm64 \
   build
 ```
 
 The Android output is `android/app/build/outputs/apk/debug/app-debug.apk`.
 The iOS output is
 `/tmp/healthyome-ios-derived/Build/Products/Debug-iphonesimulator/HealthyOMe.app`.
-The iOS app is an unsigned arm64 simulator artifact; it cannot be installed on a
-physical iPhone.
+The iOS app is an ad-hoc-signed arm64 simulator artifact; it cannot be installed
+on a physical iPhone. Keep simulator signing enabled: the earlier unsigned
+build compiled but failed at runtime with SecureStore's "A required entitlement
+isn't present" error. Xcode must embed the simulated application entitlement.
+Manually adding restricted entitlements to the unsigned executable's code
+signature is not an equivalent repair and was rejected by macOS.
 
 Debug builds skip JavaScript bundling and normally load JavaScript from a local
 development server. Compiling these artifacts therefore verifies native
@@ -56,6 +61,24 @@ require separate bundling and Apple signing setup.
 
 A real device and backend test-mode credentials are required for payment-method
 UI and push-delivery validation.
+
+## Native JavaScript server (no Expo CLI)
+
+Check that port 8081 is free or already belongs to this project before starting
+another server. From the repository root, use the installed Metro library:
+
+```bash
+node scripts/start-native-metro.cjs
+```
+
+The server binds only to `127.0.0.1:8081`; `/status` returns
+`packager-status:running`. It supports the existing native entry URL and
+preserves absolute HMR URLs, avoiding the previously observed Metro
+"Expecting the request url to have a valid protocol" crash. Its URL tests run
+with `node --test scripts/start-native-metro.test.cjs`. Missing dependencies
+must be resolved deliberately; the script never downloads or retries installs.
+This is a local simulator server, not a production service or physical-device
+LAN setup. The bundled standalone Android APK does not require it.
 
 ## Standalone Android test APK
 

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
 import { useCheckoutQuote } from '../../src/features/cart/hooks/useCheckoutQuote';
+import { cartItemDetailPath } from '../../src/features/cart/utils/cartNavigation';
 import { colors, spacing, borderRadius, typography, shadows } from '../../src/shared/theme';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 import EmptyState from '../../src/shared/components/EmptyState';
@@ -67,6 +68,16 @@ export default function CartScreen() {
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
           <View style={styles.cartItem}>
+            <TouchableOpacity
+              style={styles.cartProduct}
+              disabled={!cartItemDetailPath(item.id)}
+              accessibilityRole={cartItemDetailPath(item.id) ? 'link' : undefined}
+              accessibilityLabel={`View ${item.name} details`}
+              onPress={() => {
+                const path = cartItemDetailPath(item.id);
+                if (path) router.push(path);
+              }}
+            >
             <View style={styles.cartItemImage}>
               {item.image ? (
                 <Image source={{ uri: getImageUrl(item.image) }} style={styles.cartImg} />
@@ -80,6 +91,7 @@ export default function CartScreen() {
               <Text style={styles.cartItemName} numberOfLines={2}>{item.name}</Text>
               <Text style={styles.cartItemPrice}>{formatPrice(item.price)}</Text>
             </View>
+            </TouchableOpacity>
             <View style={styles.cartItemActions}>
               <View style={styles.qtyControl}>
                 <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.id, item.qty - 1)}>
@@ -151,6 +163,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, gap: spacing.md, ...shadows.sm,
   },
   cartItemImage: { width: 64, height: 64, borderRadius: borderRadius.md, overflow: 'hidden' },
+  cartProduct: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   cartImg: { width: '100%', height: '100%', resizeMode: 'cover' },
   cartImgFallback: { width: '100%', height: '100%', backgroundColor: colors.divider, justifyContent: 'center', alignItems: 'center' },
   cartItemInfo: { flex: 1 },

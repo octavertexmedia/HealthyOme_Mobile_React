@@ -81,7 +81,7 @@ export default function MealDetailScreen() {
             style={[styles.favBtn, { top: spacing.sm }]}
             onPress={() => {
               if (!isAuthenticated) {
-                router.push('/(auth)/login');
+                router.push({ pathname: '/(auth)/login', params: { redirect: `/meal/${meal.id}` } });
                 return;
               }
               toggleFavourite.mutate({

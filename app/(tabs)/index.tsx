@@ -395,7 +395,7 @@ export default function HomeScreen() {
         {featureFlags.showSubscription && <View style={styles.sectionPad}>
           <TouchableOpacity
             style={styles.roundedCardWrap}
-            onPress={() => router.push('/subscription')}
+            onPress={() => router.push('/subscription/plans')}
             activeOpacity={0.8}
           >
             <View style={[styles.subCardGradient, { backgroundColor: '#EAF5EA' }]}>
