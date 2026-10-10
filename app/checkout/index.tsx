@@ -302,20 +302,20 @@ function CheckoutContent() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to cart" onPress={() => router.canGoBack() ? router.back() : router.replace('/cart')}>
           <Ionicons name="arrow-back" size={24} color="#111" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Checkout</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 220 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
         <View>
           {items.length === 0 ? (
             <View style={styles.emptyCart}>
               <Text style={styles.emptyText}>Your cart is empty</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/menu')}>
-                <Text style={styles.browseLink}>Browse Menu</Text>
+              <TouchableOpacity onPress={() => router.navigate('/(tabs)')}>
+                <Text style={styles.browseLink}>Browse food</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
   },
   checkoutBlockText: { flex: 1, color: '#7C2D12', fontSize: 13, lineHeight: 18 },
 
-  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff' },
+  bottomBar: { backgroundColor: '#fff' },
   addressRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#E2DEDE',

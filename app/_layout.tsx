@@ -4,7 +4,6 @@ import '../global.css';
 import React, { useEffect, useState } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
 import { QueryProvider } from '../src/providers/QueryProvider';
 import { colors } from '../src/shared/theme';
 import * as SplashScreen from 'expo-splash-screen';
@@ -15,6 +14,7 @@ import { usePushDeepLink } from '../src/features/notifications/usePushDeepLink';
 import { useCartSync } from '../src/features/cart/hooks/useCartSync';
 import { initSentry } from '../src/shared/observability/sentry';
 import { env } from '../src/shared/config/env';
+import { CustomerShell } from '../src/shared/components/CustomerShell';
 
 initSentry();
 
@@ -66,7 +66,7 @@ export default function RootLayout() {
 
   return (
     <QueryProvider>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <CustomerShell>
         <StatusBar style="dark" />
         <Stack
           screenOptions={{
@@ -76,7 +76,7 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false, presentation: 'modal' }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="meal/[id]" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="cart" options={{ headerShown: false }} />
           <Stack.Screen name="checkout" options={{ headerShown: false }} />
@@ -90,7 +90,7 @@ export default function RootLayout() {
           <Stack.Screen name="profile-pages" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         </Stack>
-      </View>
+      </CustomerShell>
     </QueryProvider>
   );
 }

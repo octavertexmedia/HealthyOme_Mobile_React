@@ -9,6 +9,7 @@ import Onboarding from '../../../app/onboarding';
 import LegacyLocation from '../../../app/onboarding/location';
 import { defaultBrowsePlan, matchesBrowseCategory, nextSubscriptionStartDate } from './browsePolicy';
 import { safeAuthRedirect } from '../auth/authRedirect';
+import { useSubscriptionDraft } from './subscriptionDraft';
 
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
@@ -40,7 +41,7 @@ jest.mock('@tanstack/react-query', () => ({
   },
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
-beforeEach(() => { mockParams = {}; });
+beforeEach(() => { mockParams = {}; useSubscriptionDraft.getState().clear(); });
 
 it('opens public categories, plans and details without authentication', () => {
   const categories = render(<Categories />);
@@ -63,7 +64,7 @@ it('allows guest customization and only gates Checkout, retaining selections', (
   mockParams = { plan: 'test-pack', planId: '1', startDate: '2026-10-12', mealTimes: '2', vegDays: '0,4', whatsapp: 'false' };
   render(<Customize />);
   expect(screen.getByText('₹123 estimated total')).toBeTruthy();
-  fireEvent.press(screen.getByText('5 days · ₹205 per meal slot'));
+  fireEvent.press(screen.getByText('5 days'));
   expect(screen.getByText('₹205 estimated total')).toBeTruthy();
   fireEvent.press(screen.getByText('Checkout'));
   const destination = mockPush.mock.calls.at(-1)?.[0];
@@ -117,6 +118,26 @@ it('uses backend category membership and skips a Sunday start', () => {
   expect(matchesBrowseCategory(mockCard, mockCategory)).toBe(true);
   expect(matchesBrowseCategory(mockCard, { ...mockCategory, meal_plan_type_ids: [77] })).toBe(false);
   expect(nextSubscriptionStartDate(new Date(2026, 9, 10, 12))).toBe('2026-10-12');
+});
+
+it('retains a changed duration when returning from Cart without an explicit override', () => {
+  mockParams = { plan: 'test-pack', planId: '1' };
+  const first = render(<Customize />);
+  fireEvent.press(screen.getByText('5 days'));
+  first.unmount(); mockParams = { plan: 'test-pack' };
+  render(<Customize />);
+  expect(screen.getByText('₹205 estimated total')).toBeTruthy();
+});
+it('does not silently reselect a deliberately empty meal-slot selection on return', () => {
+  mockParams = { plan: 'test-pack', planId: '1', mealTimes: '' };
+  render(<Customize />);
+  expect(screen.getByRole('button', { name: 'Checkout' })).toBeDisabled();
+});
+it('gates Quick subscribe at login and preserves the exact plan return path', () => {
+  mockParams = { slug: 'test-pack' }; render(<Details />);
+  fireEvent.press(screen.getByText('Quick subscribe · ₹123'));
+  expect(mockPush).toHaveBeenLastCalledWith({ pathname: '/(auth)/login', params: { redirect: '/subscription/plans/test-pack' } });
+  expect(mockPay).not.toHaveBeenCalled();
 });
 
 it('defaults to the actual Veg row even when Non-Veg is returned first', () => {

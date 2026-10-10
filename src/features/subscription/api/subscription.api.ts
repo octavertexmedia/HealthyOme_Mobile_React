@@ -11,6 +11,9 @@ export interface MealPlanTypeRef {
   max_meal_times_selectable?: number;
   allowed_meal_time_ids?: number[];
   show_available_menu?: boolean;
+  available_menu_view?: 'list' | 'card';
+  menu_card_image?: string;
+  menu_card_image_url?: string | null;
   marketing_features?: string[];
 }
 
@@ -76,9 +79,16 @@ export interface BrowsePlan {
 export interface PlanOverview {
   slug: string; meal_plan_type: MealPlanTypeRef; plans: SubscriptionPlan[];
   starting_price: string | null; starting_period_label: string | null;
-  available_meals: { id: number; name: string; image?: string }[];
+  available_meals: { id: number; name: string; image?: string; service_date?: string; meal_time_name?: string }[];
   meal_times: MealTimeRef[]; max_meal_times_selectable?: number | null;
   can_subscribe?: boolean; subscribe_blocker?: string | null;
+  stats?: { avg_rating: number | null; total_sold: number; subscriber_count: number; meal_count: number };
+}
+
+export interface PlanMenuSchedule {
+  slug: string; meal_plan_type_id: number; from: string; to: string;
+  days: { date: string; meals: { id: number; name: string; image?: string | null; meal_time_name?: string | null; dietary_type?: string | null;
+    calories?: number | null; protein?: number | null; carbs?: number | null; fats?: number | null; fiber?: number | null }[] }[];
 }
 
 // ActiveMealPlanSerializer (shop/api/subscriptions.py). Note: field is `price`, NOT total_amount.
@@ -229,6 +239,11 @@ export const subscriptionApi = {
   },
   getOverview: async (slug: string): Promise<PlanOverview> => {
     const { data } = await apiClient.get<PlanOverview>('/subscriptions/meal-plan-overview/', { params: { slug }, publicRequest: true });
+    return data;
+  },
+  getMenuSchedule: async (slug: string, mealPlanTypeId: number): Promise<PlanMenuSchedule> => {
+    const { data } = await apiClient.get<PlanMenuSchedule>('/subscriptions/meal-plan-menu/', { params: { slug, meal_plan_type: mealPlanTypeId }, publicRequest: true });
+    if (data.slug !== slug || data.meal_plan_type_id !== mealPlanTypeId || !Array.isArray(data.days) || data.days.some((day) => !Array.isArray(day.meals))) throw new Error('Invalid menu schedule');
     return data;
   },
   // Canonical plans endpoint (subscriptions.py:133). Flat array, NO pagination wrapper.

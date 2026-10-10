@@ -8,9 +8,12 @@ const { spawn } = require('node:child_process');
 const chromePath = process.env.HEALTHYOME_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const width = 411;
 const height = 914;
+const referencePath = process.argv[2] || '/';
+const referenceName = process.argv[3] || 'home';
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main() {
   if (!fs.existsSync(chromePath)) throw new Error('Chrome is not installed at the configured path; no download or retry performed.');
+  if (!/^\/(?:subscription\/|checkout$|$)/.test(referencePath) || !/^[a-z0-9-]+$/.test(referenceName)) throw new Error('Only public same-origin reference routes and simple filenames are allowed.');
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'healthyome-web-reference-'));
   const out = path.resolve(__dirname, '../artifacts/mobile-web-reference');
   fs.mkdirSync(out, { recursive: true });
@@ -46,13 +49,14 @@ async function main() {
     await call('Page.enable');
     await call('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
     await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
-    await call('Page.navigate', { url: 'https://healthyome.in/' });
+    await call('Page.navigate', { url: `https://healthyome.in${referencePath}` });
     await wait(8000);
     const screenshot = await call('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(out, 'home-411x914.png'), Buffer.from(screenshot.data, 'base64'));
+    fs.writeFileSync(path.join(out, `${referenceName}-411x914.png`), Buffer.from(screenshot.data, 'base64'));
     const measured = await call('Runtime.evaluate', { returnByValue: true, expression: `JSON.stringify({url:location.href,viewport:{width:innerWidth,height:innerHeight},title:document.title,images:Array.from(document.images).filter(i=>/logo/i.test(i.currentSrc)).map(i=>({source:i.currentSrc,box:{x:i.getBoundingClientRect().x,y:i.getBoundingClientRect().y,width:i.getBoundingClientRect().width,height:i.getBoundingClientRect().height},objectFit:getComputedStyle(i).objectFit})),navigation:Array.from(document.querySelectorAll('nav button')).map(b=>({label:b.getAttribute('aria-label'),text:b.textContent}))})` });
     const metrics = JSON.parse(measured.result.value);
-    fs.writeFileSync(path.join(out, 'metrics.json'), JSON.stringify(metrics, null, 2));
+    const structure = await call('Runtime.evaluate', { returnByValue: true, expression: `JSON.stringify({text:document.body.innerText,blocks:Array.from(document.querySelectorAll('h1,h2,h3,button')).filter(e=>e.getBoundingClientRect().width>0).map(e=>({tag:e.tagName,text:e.textContent,box:{x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y,width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}}))})` });
+    fs.writeFileSync(path.join(out, `${referenceName}-metrics.json`), JSON.stringify({ ...metrics, structure: JSON.parse(structure.result.value) }, null, 2));
     console.log(JSON.stringify({ saved: out, viewport: metrics.viewport, title: metrics.title }));
   } finally { if (socket) socket.close(); chrome.kill('SIGTERM'); }
 }

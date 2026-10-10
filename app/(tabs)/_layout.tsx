@@ -11,7 +11,7 @@ export default function TabsLayout() {
   const tabs = customerTabs(data);
   const names = ['index', 'menu', 'snacks', 'training', 'orders', 'dietitian', 'catalog', 'profile'] as const;
   return (
-    <Tabs screenOptions={{
+    <Tabs tabBar={() => null} screenOptions={{
       headerShown: false,
       tabBarActiveTintColor: colors.primary,
       tabBarInactiveTintColor: colors.text.disabled,

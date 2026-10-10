@@ -15,15 +15,18 @@ function command(args, binary = false) {
 }
 const normalize = (value) => value.replace(/&#10;|\s+/g, ' ').trim();
 function hasText(xml, text) { return normalize(xml).includes(text); }
-async function inspect(name, expected) {
+async function inspect(name, expected, focused = false) {
   await wait(3500);
   command(['shell', 'uiautomator', 'dump', '/sdcard/healthyome-guest-e2e.xml']);
   const xml = command(['shell', 'cat', '/sdcard/healthyome-guest-e2e.xml']);
   if (hasText(xml, 'Logout')) throw new Error('Authenticated content detected; no screenshot captured.');
   for (const text of expected) if (!hasText(xml, text)) throw new Error(`${name}: expected public UI text was not found: ${text}`);
+  const brands = (xml.match(/content-desc="HealthyOme"/g) || []).length;
+  if (brands !== 1 && name !== 'checkout') throw new Error(`${name}: expected exactly one brand, found ${brands}.`);
+  if (focused && /content-desc="(?:Profile|Select delivery location)"/.test(xml)) throw new Error(`${name}: focused flow has an unexpected global header.`);
   fs.writeFileSync(path.join(output, `${name}.xml`), xml);
   fs.writeFileSync(path.join(output, `${name}.png`), command(['exec-out', 'screencap', '-p'], true));
-  steps.push({ name, passed: true, expected });
+  steps.push({ name, passed: true, expected, brandCount: brands, focused });
 }
 function open(route) {
   command(['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', `healthyome://${route}`, '-n', `${config.android.package}/.MainActivity`]);
@@ -39,12 +42,22 @@ async function main() {
   await inspect('snacks', ['Healthy Snacks']);
   open('subscription/categories');
   await inspect('subscriptions', ['Subscription Meals', 'Pick a category']);
+  open('subscription/plans/healthy-home-style-lunch-meals');
+  await inspect('subscription-detail', ['Subscription Plans', 'Available menu', 'Customize plan']);
+  open('subscription/create?plan=healthy-home-style-lunch-meals');
+  await inspect('subscription-customize', ['Customize plan', 'Plan duration', 'Checkout']);
+  open('cart');
+  await inspect('cart', ['Cart']);
+  open('checkout');
+  await inspect('checkout', ['Checkout'], true);
+  open('(tabs)/profile');
+  await inspect('profile', ['Your Account', 'Guest']);
   open('functional-training');
   await inspect('training', ['Functional Training']);
   open('consult');
   await inspect('dietitian', ['Consult', 'Dietician']);
   open('product-review/snack/8');
-  await inspect('review-login-boundary', ['Welcome', 'Phone']);
+  await inspect('review-login-boundary', ['Welcome', 'Phone'], true);
   open('/');
   const report = { scope: 'public guest native smoke, not authenticated E2E', commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: project, encoding: 'utf8' }).trim(), serial, viewport: command(['shell', 'wm', 'size']).trim(), density: command(['shell', 'wm', 'density']).trim(), steps };
   fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify(report, null, 2));

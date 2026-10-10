@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography } from '../../src/shared/them
 import Button from '../../src/shared/components/Button';
 import { safeAuthRedirect } from '../../src/features/auth/authRedirect';
 import { BrandLockup } from '../../src/shared/components/BrandLockup';
+import { PlatformIcon } from '../../src/shared/components/PlatformIcon';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -70,13 +71,13 @@ export default function LoginScreen() {
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* Back Button */}
-          <TouchableOpacity style={styles.backButton} onPress={() => { router.dismissAll(); router.replace('/(tabs)'); }}>
-            <Ionicons name="close" size={24} color={colors.text.primary} />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close sign in" style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}>
+            <PlatformIcon name="close" color={colors.text.primary} />
           </TouchableOpacity>
 
           {/* Logo & Welcome */}
           <View style={styles.headerSection}>
-            <BrandLockup />
+            <View style={{ alignItems: 'center', marginBottom: 24 }}><BrandLockup /></View>
             <Text style={styles.title}>Welcome</Text>
             <Text style={styles.subtitle}>Sign in to order healthy meals, manage subscriptions, and earn rewards</Text>
           </View>
@@ -172,13 +173,13 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: spacing.xxl, paddingBottom: spacing.xxxxl },
   backButton: { alignSelf: 'flex-start', padding: spacing.sm, marginTop: spacing.md },
-  headerSection: { marginTop: spacing.xxxxl, marginBottom: spacing.xxxl },
+  headerSection: { marginTop: 24, marginBottom: 28 },
   logoContainer: {
     width: 80, height: 80, borderRadius: borderRadius.xl, backgroundColor: colors.primaryLight,
     justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xxl,
   },
-  title: { ...typography.heading.xl, color: colors.text.primary, fontSize: 28, lineHeight: 36 },
-  subtitle: { ...typography.body.lg, color: colors.text.secondary, marginTop: spacing.md, lineHeight: 24 },
+  title: { ...typography.heading.xl, color: colors.text.primary, fontSize: 28, lineHeight: 36, textAlign: 'center' },
+  subtitle: { ...typography.body.lg, color: colors.text.secondary, marginTop: spacing.md, lineHeight: 24, textAlign: 'center' },
   modeToggle: {
     flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.lg,
     padding: 4, marginBottom: spacing.xxl, borderWidth: 1, borderColor: colors.border,

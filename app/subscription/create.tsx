@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput, Switch,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image, Switch,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +14,9 @@ import { useAuthStore } from '../../src/features/auth/store/auth.store';
 import { usePayment } from '../../src/features/payments/hooks/usePayment';
 import { defaultBrowsePlan, nextSubscriptionStartDate } from '../../src/features/subscription/browsePolicy';
 import { subscriptionReturnPath } from '../../src/features/subscription/subscriptionReturnPath';
+import { useSubscriptionDraft } from '../../src/features/subscription/subscriptionDraft';
+import { StartDateCalendar } from '../../src/features/subscription/StartDateCalendar';
+import { getImageUrl } from '../../src/shared/utils/helpers';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const INSTRUCTIONS_OPTIONS = ['Hand it to me', 'Leave at door', 'Call when arriving'];
@@ -42,7 +45,11 @@ export default function CreateSubscription() {
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const params = useLocalSearchParams<{ planId?: string; plan?: string; startDate?: string; mealTimes?: string; vegDays?: string; instructions?: string; whatsapp?: string }>();
+  const routeParams = useLocalSearchParams<{ planId?: string; plan?: string; startDate?: string; mealTimes?: string; vegDays?: string; instructions?: string; whatsapp?: string }>();
+  const [params] = useState(() => {
+    const saved = useSubscriptionDraft.getState().draft;
+    return saved && saved.plan === routeParams.plan && !routeParams.planId ? { ...routeParams, planId: String(saved.planId || ''), startDate: saved.startDate, mealTimes: saved.mealTimeIds.join(','), vegDays: saved.vegDays.join(','), instructions: saved.instructions, whatsapp: String(saved.whatsappUpdates) } : routeParams;
+  });
   const [planId, setPlanId] = useState(params.planId ? Number(params.planId) : undefined);
 
   const [vegDays, setVegDays] = useState<number[]>(params.vegDays ? params.vegDays.split(',').map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 6) : []);
@@ -77,6 +84,9 @@ export default function CreateSubscription() {
   const variants = Array.from(new Map(plans.filter((p) => p.meal_plan_type.id === plan?.meal_plan_type.id).map((p) => [p.category?.id, p.category])).values()).filter((category) => category !== undefined);
   const durations = plans.filter((p) => p.meal_plan_type.id === plan?.meal_plan_type.id && p.category?.id === plan?.category?.id);
   const returnPath = () => subscriptionReturnPath({ plan: params.plan, planId: plan?.id, startDate, mealTimeIds, vegDays, instructions, whatsappUpdates });
+  useEffect(() => {
+    if (plan && isValidIsoDate(startDate)) useSubscriptionDraft.getState().save({ title: plan.meal_plan_type.name, plan: params.plan, planId: plan.id, startDate, mealTimeIds, vegDays, instructions, whatsappUpdates });
+  }, [plan, params.plan, startDate, mealTimeIds, vegDays, instructions, whatsappUpdates]);
 
   const mealTimesQuery = useQuery({
     queryKey: ['subscription-meal-times', plan?.meal_plan_type.id],
@@ -106,9 +116,9 @@ export default function CreateSubscription() {
     const availableIds = new Set(availableMealTimes.map((mealTime) => mealTime.id));
     setMealTimeIds((current) => {
       const retained = current.filter((id) => availableIds.has(id)).slice(0, allowedCount);
-      return retained.length ? retained : availableMealTimes.slice(0, allowedCount).map((mealTime) => mealTime.id);
+      return retained.length || params.mealTimes === '' ? retained : availableMealTimes.slice(0, allowedCount).map((mealTime) => mealTime.id);
     });
-  }, [availableMealTimes, maxMealTimes]);
+  }, [availableMealTimes, maxMealTimes, params.mealTimes]);
 
   const defaultAddress = useMemo(() => {
     const list = addressesQuery.data ?? [];
@@ -211,6 +221,7 @@ export default function CreateSubscription() {
       return;
     }
 
+    useSubscriptionDraft.getState().clear();
     await queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
     Alert.alert(
       'Subscription created',
@@ -231,10 +242,10 @@ export default function CreateSubscription() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 60 }} />
-        ) : !plan ? (
+        ) : overviewQuery.isError || plansQuery.isError ? <View style={{ padding: 24 }}><Text>Could not load plan options.</Text><Button title="Retry plan options" onPress={() => { void (params.plan ? overviewQuery.refetch() : plansQuery.refetch()); }} /></View> : !plan ? (
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>
             <Text style={styles.sectionDesc}>Plan not found. Pick one from the plans list.</Text>
             <TouchableOpacity
@@ -246,20 +257,9 @@ export default function CreateSubscription() {
           </View>
         ) : (
           <>
-            <View style={styles.planSummary}>
-              <Text style={styles.summaryLabel}>Selected Plan</Text>
-              <Text style={styles.summaryTitle}>
-                {plan.name || plan.meal_plan_type?.name || 'Plan'}
-              </Text>
-              <Text style={styles.summaryPrice}>
-                {mealTimeIds.length
-                  ? `₹${(Number(plan.price) * mealTimeIds.length).toFixed(0)} estimated total`
-                  : `₹${Number(plan.price).toFixed(0)} per meal slot`}
-              </Text>
-            </View>
-
-            <Text style={styles.sectionTitle}>Diet preference</Text>
-            {variants.map((category) => <TouchableOpacity key={category.id} accessibilityRole="radio" accessibilityState={{ checked: category.id === plan.category?.id }}
+            {!!(plan.meal_plan_type.image_url || plan.meal_plan_type.image) && <Image source={{ uri: getImageUrl(plan.meal_plan_type.image_url || plan.meal_plan_type.image) }} style={{ width: '100%', height: 145, borderRadius: 16, marginBottom: 20 }} />}
+            {variants.length > 1 && <Text style={styles.sectionTitle}>Diet preference</Text>}
+            {variants.length > 1 && variants.map((category) => <TouchableOpacity key={category.id} accessibilityRole="radio" accessibilityState={{ checked: category.id === plan.category?.id }}
               style={[styles.optionRow, category.id === plan.category?.id && styles.optionRowActive]}
               onPress={() => setPlanId((plans.find((p) => p.meal_plan_type.id === plan.meal_plan_type.id && p.category?.id === category.id && p.subscription_period.id === plan.subscription_period.id)
                 ?? plans.find((p) => p.meal_plan_type.id === plan.meal_plan_type.id && p.category?.id === category.id))?.id)}>
@@ -268,7 +268,8 @@ export default function CreateSubscription() {
             <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>Plan duration</Text>
             {durations.map((option) => <TouchableOpacity key={option.id} accessibilityRole="radio" accessibilityState={{ checked: option.id === plan.id }}
               style={[styles.optionRow, option.id === plan.id && styles.optionRowActive]} onPress={() => setPlanId(option.id)}>
-              <Text style={styles.optionText}>{option.subscription_period.name} · ₹{Number(option.price).toFixed(0)} per meal slot</Text>
+              <Ionicons name={option.id === plan.id ? 'radio-button-on' : 'radio-button-off'} size={20} color={option.id === plan.id ? colors.primary : '#CBD5E1'} />
+              <View style={{ gap: 5 }}><Text style={styles.optionText}>{option.subscription_period.name}</Text><Text style={{ fontWeight: '600' }}>₹{Number(option.price).toLocaleString('en-IN')}</Text></View>
             </TouchableOpacity>)}
 
             {!isAuthenticated ? <Text style={styles.sectionDesc}>Delivery address is added after sign-in at Checkout.</Text> : defaultAddress ? (
@@ -293,20 +294,13 @@ export default function CreateSubscription() {
             )}
 
             <Text style={[styles.sectionTitle, { marginTop: spacing.xxl }]}>Start date</Text>
-            <Text style={styles.sectionDesc}>Format: YYYY-MM-DD</Text>
-            <TextInput
-              style={styles.input}
-              value={startDate}
-              onChangeText={setStartDate}
-              placeholder="2026-05-15"
-              placeholderTextColor={colors.text.muted}
-            />
+            <StartDateCalendar value={startDate} minimum={tomorrowIsoDate()} onChange={setStartDate} />
 
             <Text style={[styles.sectionTitle, { marginTop: spacing.xxl }]}>Meal slots</Text>
             <Text style={styles.sectionDesc}>
               Select at least one{maxMealTimes > 0 ? ` (up to ${maxMealTimes})` : ''}. The price is per selected slot.
             </Text>
-            {mealTimesQuery.isLoading ? (
+            {mealTimesQuery.isError ? <Button title="Retry meal slots" onPress={() => { void mealTimesQuery.refetch(); }} /> : mealTimesQuery.isLoading ? (
               <ActivityIndicator color={colors.primary} />
             ) : availableMealTimes.length ? (
               availableMealTimes.map((mealTime) => {
@@ -388,12 +382,15 @@ export default function CreateSubscription() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.md }]}>
+        <View style={{ flex: 1, gap: 4 }}><Text style={{ color: '#fff', fontSize: 12 }}>Plan: {plan?.meal_plan_type.name} | {plan?.subscription_period.name}</Text>
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 18 }}>{plan ? `₹${Number(plan.price) * mealTimeIds.length} estimated total` : '—'}</Text></View>
         <Button
           title={paying ? 'Opening payment…' : 'Checkout'}
           onPress={handleSubmit}
           loading={paying}
           disabled={!plan || paying || mealTimesQuery.isLoading || !mealTimeIds.length || overviewQuery.data?.can_subscribe === false}
-          fullWidth
+          style={{ backgroundColor: '#F4FAF0', minWidth: 112 }}
+          textStyle={{ color: colors.primary }}
           size="lg"
         />
       </View>
@@ -408,7 +405,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
   },
   headerTitle: { ...typography.heading.lg, color: colors.text.primary },
-  scrollContent: { paddingHorizontal: spacing.xl, paddingBottom: 140 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 28, paddingTop: 16 },
 
   planSummary: {
     backgroundColor: colors.primaryLight,
@@ -492,8 +489,8 @@ const styles = StyleSheet.create({
   },
 
   bottomBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#4B8E3D', borderTopWidth: 1, borderTopColor: colors.border,
     paddingHorizontal: spacing.xl, paddingTop: spacing.lg,
   },
 });

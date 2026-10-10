@@ -7,9 +7,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useQuery } from '@tanstack/react-query';
 import {
   useFeaturedMeals,
   useHomeLayout,
@@ -21,12 +19,8 @@ import type {
   PromoBanner,
 } from '../../src/features/catalog/types/meal.types';
 import { useCartStore } from '../../src/features/cart/store/cart.store';
-import { useAuthStore } from '../../src/features/auth/store/auth.store';
-import { rewardsApi } from '../../src/features/rewards/api/rewards.api';
-import { addressesApi } from '../../src/features/addresses/api/addresses.api';
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 import { homeFeatures as getHomeFeatureFlags } from '../../src/features/catalog/customerFeatures';
-import { BrandLockup } from '../../src/shared/components/BrandLockup';
 
 const { width } = Dimensions.get('window');
 // compute card width to fit inside horizontal padding (20px each side)
@@ -77,7 +71,6 @@ function getCmsRoute(link: string, flags: HomeFeatureFlags): string | null {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const {
     data: featuredMeals,
     refetch: refetchMeals,
@@ -87,36 +80,9 @@ export default function HomeScreen() {
   const { data: siteSettings, refetch: refetchSiteSettings } = useSiteSettings();
   const { data: categories } = useMealCategories();
   const addItem = useCartStore((s) => s.addItem);
-  const cartCount = useCartStore((s) => s.totalItems);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [refreshing, setRefreshing] = useState(false);
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
   const heroScrollRef = useRef<ScrollView>(null);
-
-  const pointsQuery = useQuery({
-    queryKey: ['rewards', 'points'],
-    queryFn: rewardsApi.getUserPoints,
-    enabled: isAuthenticated,
-    staleTime: 60 * 1000,
-  });
-
-  const addressesQuery = useQuery({
-    queryKey: ['addresses'],
-    queryFn: addressesApi.list,
-    enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const defaultAddress =
-    addressesQuery.data?.find((a) => a.is_default) ?? addressesQuery.data?.[0];
-  const locationPrimary = defaultAddress
-    ? defaultAddress.label || defaultAddress.delivery_area?.name || 'Delivery'
-    : 'Select location';
-  const locationSecondary = defaultAddress
-    ? defaultAddress.delivery_area?.name && defaultAddress.label
-      ? defaultAddress.delivery_area.name
-      : defaultAddress.address
-    : undefined;
 
   const promoBanners = homeLayout?.promo_banners ?? [];
   const heroSlides = useMemo(
@@ -206,7 +172,6 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 20, paddingBottom: 8, backgroundColor: '#fff' }}><BrandLockup /></View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4B8E3D" />}
@@ -220,51 +185,6 @@ export default function HomeScreen() {
           end={{ x: 1, y: 1 }}
           style={[styles.heroBanner, { paddingTop: 16, height: 190 }]}
         >
-          {/* Header inside Hero */}
-          <View style={styles.headerRow}>
-            <TouchableOpacity
-              style={styles.locationWrap}
-              onPress={() => isAuthenticated
-                ? router.push('/profile-pages/addresses')
-                : router.push({ pathname: '/(auth)/login', params: { redirect: '/profile-pages/addresses' } })}
-              activeOpacity={0.85}
-            >
-              <View style={styles.pinCircle}>
-                <Ionicons name="location" size={20} color="#111" />
-              </View>
-              <View style={{ maxWidth: 160 }}>
-                <Text style={styles.locationText} numberOfLines={1}>{locationPrimary}</Text>
-                {locationSecondary ? (
-                  <Text style={styles.addressText} numberOfLines={1}>{locationSecondary}</Text>
-                ) : null}
-              </View>
-            </TouchableOpacity>
-
-            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Account" onPress={() => router.push('/(tabs)/profile')} style={styles.pinCircle}>
-                <Ionicons name="person" size={20} color="#111" />
-              </TouchableOpacity>
-              {isAuthenticated && (
-                <TouchableOpacity
-                  style={styles.pointsPill}
-                  onPress={() => router.push('/rewards' as any)}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="star" size={14} color="#F5A623" />
-                  <Text style={styles.pointsText}>{pointsQuery.data ?? 0}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={styles.cartCircle} onPress={() => router.push('/cart')}>
-                <Ionicons name="cart-outline" size={20} color="#111" />
-                {cartCount > 0 && (
-                  <View style={styles.cartBadge}>
-                    <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-
           {heroSlides.length > 0 ? (
             <>
               <ScrollView

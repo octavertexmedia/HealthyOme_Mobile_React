@@ -12,21 +12,29 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../src/sh
 import { formatPrice, getImageUrl } from '../../src/shared/utils/helpers';
 import EmptyState from '../../src/shared/components/EmptyState';
 import Button from '../../src/shared/components/Button';
+import { useSubscriptionDraft } from '../../src/features/subscription/subscriptionDraft';
+import { subscriptionReturnPath } from '../../src/features/subscription/subscriptionReturnPath';
 
 export default function CartScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { items, totalItems, totalPrice, updateQuantity, clearCart } = useCartStore();
   const { data: quote } = useCheckoutQuote();
+  const draft = useSubscriptionDraft((state) => state.draft);
+  const resumePlan = draft ? <View style={{ padding: 16, gap: 8, backgroundColor: '#EFF8EA' }}>
+    <Text style={{ fontWeight: '600' }}>Continue setting up {draft.title}</Text>
+    <Text>Your selections are saved for this session. This is not yet an order or cart charge.</Text>
+    <Button title="Resume meal plan" onPress={() => router.push(subscriptionReturnPath(draft) as any)} />
+  </View> : null;
 
   // Prefer server-authoritative totals (SiteSettings thresholds + payable_total).
   // Fall back to a local estimate while logged-out / loading / bowl-only cart.
-  const freeShippingThreshold = quote?.free_shipping_threshold ?? 200;
+  const freeShippingThreshold = quote?.free_shipping_threshold;
   const subtotal = quote?.subtotal ?? totalPrice;
   const deliveryFee =
-    quote?.shipping ?? (totalPrice > freeShippingThreshold ? 0 : 30);
+    quote?.shipping;
   const discount = quote?.discount ?? 0;
-  const grandTotal = quote?.payable_total ?? subtotal + deliveryFee;
+  const grandTotal = quote?.payable_total ?? subtotal;
 
   if (items.length === 0) {
     return (
@@ -38,12 +46,13 @@ export default function CartScreen() {
           <Text style={styles.headerTitle}>Cart</Text>
           <View style={{ width: 24 }} />
         </View>
+        {resumePlan}
         <EmptyState
           icon="cart-outline"
           title="Your cart is empty"
-          description="Add meals from the menu to get started"
-          actionLabel="Browse Menu"
-          onAction={() => router.push('/(tabs)/menu')}
+          description="Browse the available meals and snacks to get started"
+          actionLabel="Browse food"
+          onAction={() => router.navigate('/(tabs)')}
         />
       </View>
     );
@@ -62,6 +71,7 @@ export default function CartScreen() {
       </View>
 
       <FlatList
+        ListHeaderComponent={resumePlan}
         data={items}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
@@ -121,14 +131,14 @@ export default function CartScreen() {
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Delivery</Text>
               <Text style={[styles.summaryValue, deliveryFee === 0 && styles.freeText]}>
-                {deliveryFee === 0 ? 'FREE' : formatPrice(deliveryFee)}
+                {deliveryFee === undefined ? 'Confirmed at checkout' : deliveryFee === 0 ? 'FREE' : formatPrice(deliveryFee)}
               </Text>
             </View>
-            {deliveryFee > 0 && subtotal < freeShippingThreshold && (
+            {deliveryFee !== undefined && deliveryFee > 0 && freeShippingThreshold !== undefined && subtotal < freeShippingThreshold && (
               <Text style={styles.freeDeliveryHint}>Add {formatPrice(freeShippingThreshold - subtotal)} more for free delivery</Text>
             )}
             <View style={[styles.summaryRow, styles.totalRow]}>
-              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalLabel}>{quote ? 'Total' : 'Estimated subtotal'}</Text>
               <Text style={styles.totalValue}>{formatPrice(grandTotal)}</Text>
             </View>
           </View>
@@ -138,7 +148,7 @@ export default function CartScreen() {
       {/* Checkout Button */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + spacing.md }]}>
         <Button
-          title={`Proceed to Checkout · ${formatPrice(grandTotal)}`}
+          title={`Proceed to Checkout${quote ? ` · ${formatPrice(grandTotal)}` : ''}`}
           onPress={() => router.push('/checkout')}
           fullWidth
           size="lg"

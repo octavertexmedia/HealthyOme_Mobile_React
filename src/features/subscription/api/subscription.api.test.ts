@@ -26,3 +26,15 @@ it('loads actual meal-time IDs without a made-up plan filter', async () => {
   await expect(subscriptionApi.getMealTimes()).resolves.toEqual(data);
   expect(apiClient.get).toHaveBeenCalledWith('/meal-times-list/', { params: undefined, publicRequest: true });
 });
+it('loads the public day-wise menu with exact plan identity and no credentials', async () => {
+  const data = { slug: 'test-plan', meal_plan_type_id: 8, from: '2026-10-12', to: '2026-10-18', days: [{ date: '2026-10-12', meals: [{ id: 2, name: 'Meal', protein: 30 }] }] };
+  jest.mocked(apiClient.get).mockResolvedValue({ data });
+  await expect(subscriptionApi.getMenuSchedule('test-plan', 8)).resolves.toEqual(data);
+  expect(apiClient.get).toHaveBeenCalledWith('/subscriptions/meal-plan-menu/', { params: { slug: 'test-plan', meal_plan_type: 8 }, publicRequest: true });
+});
+it('rejects menu data for a mismatched plan or malformed days', async () => {
+  jest.mocked(apiClient.get).mockResolvedValue({ data: { slug: 'other', meal_plan_type_id: 8, days: [] } });
+  await expect(subscriptionApi.getMenuSchedule('test-plan', 8)).rejects.toThrow('Invalid menu schedule');
+  jest.mocked(apiClient.get).mockResolvedValue({ data: { slug: 'test-plan', meal_plan_type_id: 8, days: [{ meals: null }] } });
+  await expect(subscriptionApi.getMenuSchedule('test-plan', 8)).rejects.toThrow('Invalid menu schedule');
+});

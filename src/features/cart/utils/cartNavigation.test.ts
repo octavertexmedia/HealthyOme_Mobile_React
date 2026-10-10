@@ -4,7 +4,8 @@ it('opens the actual meal detail for a numeric cart row', () => {
   expect(cartItemDetailPath('42')).toBe('/meal/42');
 });
 
-it.each(['snack-42', 'bowl-42', 'cart-42', '0', '-1', '42/../admin', '9007199254740992'])(
+it('reopens the selected snack from the cart', () => expect(cartItemDetailPath('snack-42')).toBe('/snacks?snackId=42'));
+it.each(['snack-0', 'snack-9007199254740992', 'bowl-42', 'cart-42', '0', '-1', '42/../admin', '9007199254740992'])(
   'does not misroute unsupported or malformed row %s', (id) => {
     expect(cartItemDetailPath(id)).toBeNull();
   }

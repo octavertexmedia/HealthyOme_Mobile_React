@@ -1,5 +1,10 @@
 # Cohesive mobile source checkpoint — 10 October 2026
 
+The subsequent `CONTEXTUAL_SHELL_VALIDATION.md` supersedes the UI/branding and
+iOS-visual-status portions below, including the latest contextual navigation
+instruction and the finding that the original PNG alpha channels are fully
+opaque. The source changes described here remain part of the checkpoint.
+
 This is a source/test checkpoint and safe guest-preview handoff, not full
 web/mobile parity, authenticated customer acceptance or store readiness.
 Branch: `codex/mobile-parity-fixes`; base:

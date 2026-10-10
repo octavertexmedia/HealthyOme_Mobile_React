@@ -4,14 +4,14 @@ import {
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { authApi } from '../../src/features/auth/api/auth.api';
 import { useAuthStore } from '../../src/features/auth/store/auth.store';
-import { BrandLockup } from '../../src/shared/components/BrandLockup';
 import { colors, spacing, borderRadius, typography } from '../../src/shared/theme';
 import Button from '../../src/shared/components/Button';
 import { safeAuthRedirect } from '../../src/features/auth/authRedirect';
+import { BrandLockup } from '../../src/shared/components/BrandLockup';
+import { PlatformIcon } from '../../src/shared/components/PlatformIcon';
 
 export default function VerifyScreen() {
   const router = useRouter();
@@ -111,11 +111,11 @@ export default function VerifyScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <TouchableOpacity style={styles.backButton} onPress={() => { router.dismissAll(); router.replace('/(tabs)'); }}>
-          <Ionicons name="close" size={28} color={colors.text.primary} />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to sign in" style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/(auth)/login')}>
+          <PlatformIcon name="back" color={colors.text.primary} />
         </TouchableOpacity>
 
-        <BrandLockup />
+        <View style={{ alignItems: 'center', marginBottom: 24 }}><BrandLockup /></View>
         <Text style={styles.title}>Verify OTP</Text>
         <Text style={styles.subtitle}>
           Enter the 6-digit code sent to{'\n'}
